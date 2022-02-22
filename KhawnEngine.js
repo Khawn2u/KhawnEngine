@@ -997,7 +997,7 @@ var KhawnEngine = function() {
 	uniform highp sampler2D uVertexNormals;
 	uniform highp sampler2D uVertexUVs;
 	
-	uniform highp vec4 LightPositions[24];
+	uniform highp vec4 LightPositions[8];
 	uniform highp mat3x4 uViewMatrix;
 	uniform highp vec3 uCamreaPosition;
     uniform highp vec4 uOptions;
@@ -1006,7 +1006,7 @@ var KhawnEngine = function() {
 	out highp vec3 PositionToCamera;
 	out highp vec3 CameraSpacePosition;
 	out highp vec3 Normal;
-	out highp vec3 Lighting[24];
+	out highp vec3 Lighting[8];
 	out highp float depth;
 	out highp vec2 UV;
 	
@@ -1035,7 +1035,7 @@ var KhawnEngine = function() {
         point = WorldPointToCamera(point);
 		UV = getVertexUV(aVertexDataIndexs[2]);
 		CameraSpacePosition = point;
-		for (lowp int i = 0; i<24; i++) {
+		for (lowp int i = 0; i<8; i++) {
 			Lighting[i] = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
 		}
 		PositionToCamera = uCamreaPosition-WorldPosition;
@@ -1065,9 +1065,9 @@ var KhawnEngine = function() {
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		uniform samplerCube uReflectionCubemap;
-        in highp vec3 Lighting[24];
-		uniform highp vec3 LightColors[24];
-		uniform highp vec4 LightPositions[24];
+        in highp vec3 Lighting[8];
+		uniform highp vec3 LightColors[8];
+		uniform highp vec4 LightPositions[8];
 		uniform highp float Reflectivity;
 		uniform highp float Roughness;
 		uniform highp float IOR;
@@ -1076,23 +1076,25 @@ var KhawnEngine = function() {
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
 		in highp vec2 UV;
+		highp float FresnelReflectionCoefficient(highp vec3 dir, highp vec3 norml, highp float ior) {
+			highp float cosi = dot(dir,norml);
+			highp float cost = -dot(refract(dir,norml,1.0/ior),norml)*ior;
+			return clamp((cost-cosi)/(cosi+cost),0.0,1.0);
+		}
         void main(void) {
 			position = vec4(WorldPosition,CameraSpacePosition.z);
 			highp vec3 normal = normalize(Normal);
 			highp vec3 ViewDir = normalize(PositionToCamera);
 			highp vec3 refl = reflect(ViewDir,normal);
-			highp float fresnel = pow(dot(normal,ViewDir),IOR);
-			highp vec3 DirectLight = vec3(0.25,0.25,0.25);
+			highp float fresnel = FresnelReflectionCoefficient(ViewDir,normal,IOR);
+			highp vec3 DirectLight;
 			for (lowp int i = 0; i<8; i++) {
 				DirectLight += LightColors[i]*max(dot(Lighting[i],normal)/(dot(Lighting[i],Lighting[i])+LightPositions[i].w),0.0);
 			}
-			highp float diffuse = fresnel*Roughness;
-			highp float reflection = sqrt(1.0-(diffuse*diffuse))*Reflectivity;
+			highp float reflection = mix(fresnel,1.0,Reflectivity);
 			highp float lodm = log2(float(textureSize(uReflectionCubemap,0)));
-			highp float lod = lodm*log2(diffuse+1.0);
-			color = vec4(uColor*mix(texture(uTexture,UV).rgb*DirectLight,textureLod(uReflectionCubemap,refl,lod).rgb,reflection),1);
-			//color = vec4((uColor*texture(uTexture,UV).rgb*DirectLight)+(textureLod(uReflectionCubemap,refl,lod).rgb*reflection),1);
-			//color = vec4(vec3(fresnel),1.0);
+			highp float lod = lodm*log2(Roughness+1.0);
+			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,textureLod(uReflectionCubemap,refl,lod).rgb,reflection),1);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'},{Name:'Reflectivity',Type:'float'},{Name:'Roughness',Type:'float'},{Name:'IOR',Type:'float'}]);
 	//,{Name:'uCubemap',Type:'samplerCube',Value:8}
@@ -1106,7 +1108,7 @@ var KhawnEngine = function() {
         return cvs;
 	})());
 	this.CubemapTest = null;
-    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:1,IOR:0.8});
+    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:1,IOR:1.6});
 	this.XaxisMaterial = new this.Material(this.DefaultShader,{uColor:[1,0,0]});
 	this.YaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,1,0]});
 	this.ZaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,0,1]});
@@ -1688,7 +1690,7 @@ var KhawnEngine = function() {
                 }
 				//self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
 				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
-                self.gl.clearColor(0.25,0.25,0.25, 1.0);
+                self.gl.clearColor(0.0,0.0,0.0, 1.0);
                 self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
                 //self.canvas.width = resolution[0];
                 //self.canvas.height = resolution[1];
@@ -1776,18 +1778,18 @@ var KhawnEngine = function() {
 		this.Render = function() {
 			if (this.Enabled) {
 				self.gl.enable(self.gl.DEPTH_TEST);
-				var Pos = this.Parrent.getGlobalTransform().traslation.Oposite();
+				var Pos = this.Parrent.getGlobalTransform().traslation;
 				for (var i=0; i<self.CubemapMatrixTransforms.length; i++) {
 					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.RenderBuffer);
-					var CamTranfm = new self.transform(Pos,self.CubemapMatrixTransforms[i]).ToMatrix3x4();
-					self.gl.clearColor(0.25,0.35,0.45, 1.0);
+					var CamTranfm = new self.transform(Pos.Oposite(),self.CubemapMatrixTransforms[i]).ToMatrix3x4();
+					self.gl.clearColor(0.0,0.0,0.0, 1.0);
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					for (var j=0; j<self.RenderQue.length; j++) {
-						var rp = self.RenderQue[j].ReflectionProbe;
-						self.RenderQue[j].ReflectionProbe = null;
+						//var rp = self.RenderQue[j].ReflectionProbe;
+						//self.RenderQue[j].ReflectionProbe = null;
 						self.gl.viewport(0,0,this.Resolution,this.Resolution);
 						self.RenderQue[j].render(CamTranfm,{FeildOfView:60,ClipDistance:0.2},Pos.value);
-						self.RenderQue[j].ReflectionProbe = rp;
+						//self.RenderQue[j].ReflectionProbe = rp;
 					}
 					//ReflectionProbePostProcessingShader
 					self.gl.useProgram(self.ReflectionProbePostProcessingShader.program);
@@ -1801,6 +1803,7 @@ var KhawnEngine = function() {
 					self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
 					self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_CUBE_MAP_POSITIVE_X+i, this.Cubemap, 0);
 					self.gl.clearColor(0.25,0.25,0.25, 0);
+					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 				}
 				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
