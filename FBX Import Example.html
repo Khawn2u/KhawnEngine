@@ -55,7 +55,7 @@
 					var decoder = new Engine.FBXdecoder();
 					var decoded = decoder.parse(data);
 					decoder.decodeData();
-					Engine.Root.addChild(decoder.toObject());
+					Engine.Root.addChild(decoder.toObject(Material));
 				}
 				reader.readAsArrayBuffer(file);
 			}

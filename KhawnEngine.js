@@ -695,7 +695,7 @@ var KhawnEngine = function() {
             }
             this.Heigerarchy = Nodes["0"];
         }
-        this.toObject = function() {
+        this.toObject = function(Mat) {
             // var ObjsLst = ["LimbNode"];
             function parseMesh(N) {
                 //var mshDta = [];
@@ -967,7 +967,7 @@ var KhawnEngine = function() {
                         }
                     }
                     var Mesh = new self.SkinnedMesh(MeshDatas[i].Data.MeshData,DefaultPose,MeshDatas[i].Data.Bones);
-                    var Component = new self.Components.SkinnedMeshRenderer(Mesh,new Array(MeshDatas[i].Data.MeshData.length).fill(self.DefaultMaterial));
+                    var Component = new self.Components.SkinnedMeshRenderer(Mesh,new Array(MeshDatas[i].Data.MeshData.length).fill(Mat || self.DefaultMaterial));
                     for (var j=0; j<Limbs.length; j++) {
                         var boneIdx = Component.SkinnedMesh.Bones.indexOf(Limbs[j].Name);
                         if (boneIdx !== -1) {
@@ -981,7 +981,7 @@ var KhawnEngine = function() {
                     MeshDatas[i].Object.AddComponent(Component);
                 } else {
                     var Mesh = new self.Mesh(MeshDatas[i].Data.MeshData);
-                    var Component = new self.Components.MeshRenderer(Mesh,new Array(MeshDatas[i].Data.MeshData.length).fill(self.DefaultMaterial));
+                    var Component = new self.Components.MeshRenderer(Mesh,new Array(MeshDatas[i].Data.MeshData.length).fill(Mat || self.DefaultMaterial));
 					MeshDatas[i].Object.Name = "Static Mesh";
                     MeshDatas[i].Object.AddComponent(Component);
 				}
