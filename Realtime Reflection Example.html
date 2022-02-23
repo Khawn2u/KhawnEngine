@@ -12,7 +12,7 @@
     </head>
     <body bgcolor="#808080">
         <center>
-			<canvas id="viewport" width="1920" height="1080"></canvas><br>
+			<canvas id="viewport" width="1280" height="720"></canvas><br>
         </center>
 		<script>
 			var Engine = new KhawnEngine();
@@ -25,7 +25,7 @@
 			}
 
 			var Material = new Engine.Material(Engine.DefaultShader,{uColor:[1,1,1],uTexture:Engine.DefaultTexture,Reflectivity:1,Roughness:0,IOR:1.2});
-			var Camera = Engine.CreateCamera(canvas,[1920,1080],90,0.2,false);
+			var Camera = Engine.CreateCamera(canvas,[1280,720],90,0.2,false);
 			Camera.transform.traslation.AddToThis(new Engine.Vector3([0,2,3]));
 			Camera.rotateThisAroundYAxis(new Engine.Angle(180));
 			Engine.Root.addChild(Camera);
