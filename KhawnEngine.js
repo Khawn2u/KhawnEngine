@@ -100,6 +100,7 @@ var KhawnEngine = function() {
         this.Options = self.gl.getUniformLocation(this.program, 'uOptions');
 		this.CamreaPosition = self.gl.getUniformLocation(this.program, 'uCamreaPosition');
 		this.ReflectionCubemap = self.gl.getUniformLocation(this.program, 'uReflectionCubemap');
+		this.ReflectionPosition = self.gl.getUniformLocation(this.program, 'uReflectionPosition');
         this.Uniforms = {};
         for (var i = 0; i < uniforms.length; i++) {
             if (uniforms[i].Value == undefined) {
@@ -197,7 +198,7 @@ var KhawnEngine = function() {
 		
 		void main(void) {
 			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
-			color = vec4(texelFetch(uColorTex,Pos,0).xyz,1.0/texelFetch(uPositionTex,Pos,0).w);
+			color = vec4(texelFetch(uColorTex,Pos,0).xyz,texelFetch(uPositionTex,Pos,0).w);
 		}
 	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uPositionTex',Type:'sampler2D',Value:1}]);
 	this.VertexMapingShader = function(fs,uniforms) {
@@ -997,7 +998,7 @@ var KhawnEngine = function() {
 	uniform highp sampler2D uVertexNormals;
 	uniform highp sampler2D uVertexUVs;
 	
-	uniform highp vec4 LightPositions[8];
+	uniform highp vec4 LightPositions[24];
 	uniform highp mat3x4 uViewMatrix;
 	uniform highp vec3 uCamreaPosition;
     uniform highp vec4 uOptions;
@@ -1006,7 +1007,7 @@ var KhawnEngine = function() {
 	out highp vec3 PositionToCamera;
 	out highp vec3 CameraSpacePosition;
 	out highp vec3 Normal;
-	out highp vec3 Lighting[8];
+	out highp vec3 Lighting[24];
 	out highp float depth;
 	out highp vec2 UV;
 	
@@ -1035,7 +1036,7 @@ var KhawnEngine = function() {
         point = WorldPointToCamera(point);
 		UV = getVertexUV(aVertexDataIndexs[2]);
 		CameraSpacePosition = point;
-		for (lowp int i = 0; i<8; i++) {
+		for (lowp int i = 0; i<24; i++) {
 			Lighting[i] = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
 		}
 		PositionToCamera = uCamreaPosition-WorldPosition;
@@ -1046,9 +1047,6 @@ var KhawnEngine = function() {
     this.DebugShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
         layout(location = 0) out highp vec4 color;
 		layout(location = 1) out highp vec4 position;
-        in highp vec3 Lighting[24];
-		uniform highp vec3 LightColors[24];
-		uniform highp vec4 LightPositions[24];
 		in highp vec3 CameraSpacePosition;
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
@@ -1065,9 +1063,10 @@ var KhawnEngine = function() {
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		uniform samplerCube uReflectionCubemap;
-        in highp vec3 Lighting[8];
-		uniform highp vec3 LightColors[8];
-		uniform highp vec4 LightPositions[8];
+		uniform highp vec3 uReflectionPosition;
+        in highp vec3 Lighting[24];
+		uniform highp vec3 LightColors[24];
+		uniform highp vec4 LightPositions[24];
 		uniform highp float Reflectivity;
 		uniform highp float Roughness;
 		uniform highp float IOR;
@@ -1076,25 +1075,59 @@ var KhawnEngine = function() {
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
 		in highp vec2 UV;
+		highp vec3 fastNormalize(highp vec3 vect) {
+			vect = mix(vect,vect/dot(vect,vect),0.8);
+			vect = mix(vect,vect/dot(vect,vect),0.7);
+			vect = mix(vect,vect/dot(vect,vect),0.5);
+			return vect;
+		}
+		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir, highp float lvl) {
+			pos = (uReflectionPosition-pos)+(dir*0.9);
+			highp vec3 p = pos;
+			highp float d = 0.0;
+			highp float l = length(p);
+			highp vec4 h = textureLod(uReflectionCubemap,p,0.0);
+			for (lowp int i=0; i<24; i++) {
+				d += (h.w-l);
+				p = pos+(dir*d);
+				l = length(p);
+				h = textureLod(uReflectionCubemap,p,0.0);
+			}
+			return textureLod(uReflectionCubemap,p,lvl).rgb;
+		}
 		highp float FresnelReflectionCoefficient(highp vec3 dir, highp vec3 norml, highp float ior) {
 			highp float cosi = dot(dir,norml);
-			highp float cost = -dot(refract(dir,norml,1.0/ior),norml)*ior;
+			highp float cost = -clamp(dot(refract(dir,norml,1.0/ior),norml),-1.0,1.0)*ior;
 			return clamp((cost-cosi)/(cosi+cost),0.0,1.0);
 		}
         void main(void) {
-			position = vec4(WorldPosition,CameraSpacePosition.z);
+			position.xyz = WorldPosition;
 			highp vec3 normal = normalize(Normal);
 			highp vec3 ViewDir = normalize(PositionToCamera);
+			position.w = dot(PositionToCamera,ViewDir);
 			highp vec3 refl = reflect(ViewDir,normal);
 			highp float fresnel = FresnelReflectionCoefficient(ViewDir,normal,IOR);
 			highp vec3 DirectLight;
-			for (lowp int i = 0; i<8; i++) {
-				DirectLight += LightColors[i]*max(dot(Lighting[i],normal)/(dot(Lighting[i],Lighting[i])+LightPositions[i].w),0.0);
-			}
+			highp vec3 ReflectedLight;
+			
 			highp float reflection = mix(fresnel,1.0,Reflectivity);
+			highp float k = min(2500.0,1.0/(Roughness*Roughness));
+			highp float m = (1.0+k)/2.0;
+			for (lowp int i = 0; i<24; i++) {
+				highp float div = (dot(Lighting[i],Lighting[i])+LightPositions[i].w);
+				if (div == 0.0) {
+					break;
+				}
+				highp vec3 LigNorm = normalize(Lighting[i]);
+				DirectLight += LightColors[i]*max(dot(LigNorm,normal)/div,0.0);
+				ReflectedLight += LightColors[i]*m*pow(max(-dot(LigNorm,refl),0.0),k)/div;
+			}
 			highp float lodm = log2(float(textureSize(uReflectionCubemap,0)));
 			highp float lod = lodm*log2(Roughness+1.0);
-			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,textureLod(uReflectionCubemap,refl,lod).rgb,reflection),1);
+			ReflectedLight += RayMarch(WorldPosition,refl,lod);
+			//ReflectedLight = pow(ReflectedLight,vec3(0.45));
+			//DirectLight = pow(DirectLight,vec3(0.45));
+			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,ReflectedLight,reflection),1);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'},{Name:'Reflectivity',Type:'float'},{Name:'Roughness',Type:'float'},{Name:'IOR',Type:'float'}]);
 	//,{Name:'uCubemap',Type:'samplerCube',Value:8}
@@ -1108,7 +1141,7 @@ var KhawnEngine = function() {
         return cvs;
 	})());
 	this.CubemapTest = null;
-    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:1,IOR:1.6});
+    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:1,IOR:1.1});
 	this.XaxisMaterial = new this.Material(this.DefaultShader,{uColor:[1,0,0]});
 	this.YaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,1,0]});
 	this.ZaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,0,1]});
@@ -1118,6 +1151,7 @@ var KhawnEngine = function() {
 	//mshDta.push({VertexPositions:VertexPositions,VertexNormals:VertexNormals,VertexDataIndexs:VertexDataIndexs,VertexUVs:newUVs,Indices:newIndcs,Weights:newWeights,WeightIndices:newWeightIndices});
     this.DefaultPlaneMesh = new this.Mesh({VertexPositions:[[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1]],VertexNormals:[[0,1,0]],VertexUVs:[[1,1],[0,1],[1,0],[0,0]],VertexDataIndexs:[[0,0,0],[1,0,1],[2,0,2],[3,0,3]],Indices:[[[0,2,1],[3,1,2]]]});
 	this.DefaultCubeMesh = new this.Mesh({VertexPositions:[[0.5,0.5,0.5],[-0.5,0.5,0.5],[0.5,-0.5,0.5],[-0.5,-0.5,0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5],[0.5,-0.5,-0.5],[-0.5,-0.5,-0.5]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
+	this.DefaultFlipedCubeMesh = new this.Mesh({VertexPositions:[[0.5,0.5,0.5],[-0.5,0.5,0.5],[0.5,-0.5,0.5],[-0.5,-0.5,0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5],[0.5,-0.5,-0.5],[-0.5,-0.5,-0.5]],VertexNormals:[[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,2,1],[3,1,2],[4,5,6],[7,6,5],[8,9,10],[11,10,9],[12,14,13],[15,13,14],[16,18,17],[19,17,18],[20,21,22],[23,22,21]]]});
 	this.DefaultUVSphereMesh = new this.Mesh((function(){
 		var MeshData = {VertexPositions:[],VertexNormals:[],VertexDataIndexs:[],Indices:[[]]};
 		var s = 16;
@@ -1290,7 +1324,7 @@ var KhawnEngine = function() {
 					Lghts.unshift(res);
 				}
 			}
-			Lghts.splice(28,Infinity);
+			Lghts.splice(24,Infinity);
 			for (var i=0; i<Lghts.length; i++) {
 				LightColors.push(Lghts[i].Color);
 				LightPositions.push(Lghts[i].Pos);
@@ -1298,16 +1332,16 @@ var KhawnEngine = function() {
 			this.LightColors = LightColors.flat();
 			this.LightPositions = LightPositions.flat();
 			
-			var Cubmp = null;
+			var Refl = {Cubemap:null,Position:{value:[0,0,0]}};
 			var dist = Infinity;
 			for (var i=0; i<self.ReflectionProbes.length; i++) {
 				var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared()
 				if (d < dist) {
 					dist = d;
-					Cubmp = self.ReflectionProbes[i].Cubemap;
+					Refl = self.ReflectionProbes[i];
 				}
 			}
-			this.ReflectionProbe = Cubmp;
+			this.ReflectionProbe = Refl;
 
 			var ModelTransform = ModelTransform.ToMatrixTransposed3x4().value;
 			var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
@@ -1344,7 +1378,7 @@ var KhawnEngine = function() {
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.Mesh.VertexUVPositions.texture);
 				
 				self.gl.activeTexture(self.gl.TEXTURE3);
-				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe.Cubemap);
 				
 				var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
                 for (var l=0; l<this.Mesh.IndexBuffers.length; l++) {
@@ -1353,6 +1387,8 @@ var KhawnEngine = function() {
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
+						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe.Position.value);
+						//uReflectionPosition
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
                         var m = Math.max(VPdims[2],VPdims[3]);
@@ -1458,7 +1494,7 @@ var KhawnEngine = function() {
 						Lghts.unshift(res);
 					}
 				}
-				Lghts.splice(28,Infinity);
+				Lghts.splice(24,Infinity);
 				for (var i=0; i<Lghts.length; i++) {
 					LightColors.push(Lghts[i].Color);
 					LightPositions.push(Lghts[i].Pos);
@@ -1466,16 +1502,16 @@ var KhawnEngine = function() {
 				this.LightColors = LightColors.flat();
 				this.LightPositions = LightPositions.flat();
 				
-				var Cubmp = null;
+				var Refl = {Cubemap:null,Position:{value:[0,0,0]}};
 				var dist = Infinity;
 				for (var i=0; i<self.ReflectionProbes.length; i++) {
 					var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared()
 					if (d < dist) {
 						dist = d;
-						Cubmp = self.ReflectionProbes[i].Cubemap;
+						Refl = self.ReflectionProbes[i];
 					}
 				}
-				this.ReflectionProbe = Cubmp;
+				this.ReflectionProbe = Refl;
 				
 				var ModelTransform = ModelTransform.ToMatrixTransposed3x4().value;
 				var TextureData = [new Float32Array(this.DefaultPose.length*4),new Float32Array(this.DefaultPose.length*4),new Float32Array(this.DefaultPose.length*4)];
@@ -1567,7 +1603,7 @@ var KhawnEngine = function() {
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.SkinnedMesh.VertexUVPositions.texture);
 				
 				self.gl.activeTexture(self.gl.TEXTURE3);
-				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe.Cubemap);
 				
                 for (var l=0; l<this.SkinnedMesh.IndexBuffers.length; l++) {
                     if (this.Materials[l]) {
@@ -1575,6 +1611,7 @@ var KhawnEngine = function() {
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
+						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe.Position.value);
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
                         var m = Math.max(VPdims[2],VPdims[3]);
@@ -1782,14 +1819,14 @@ var KhawnEngine = function() {
 				for (var i=0; i<self.CubemapMatrixTransforms.length; i++) {
 					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.RenderBuffer);
 					var CamTranfm = new self.transform(Pos.Oposite(),self.CubemapMatrixTransforms[i]).ToMatrix3x4();
-					self.gl.clearColor(0.0,0.0,0.0, 1.0);
+					self.gl.clearColor(0.0,0.0,0.0, Infinity);
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					for (var j=0; j<self.RenderQue.length; j++) {
-						//var rp = self.RenderQue[j].ReflectionProbe;
-						//self.RenderQue[j].ReflectionProbe = null;
+						var rp = self.RenderQue[j].ReflectionProbe;
+						self.RenderQue[j].ReflectionProbe = {Cubemap:null,Position:{value:[0,0,0]}};
 						self.gl.viewport(0,0,this.Resolution,this.Resolution);
 						self.RenderQue[j].render(CamTranfm,{FeildOfView:60,ClipDistance:0.2},Pos.value);
-						//self.RenderQue[j].ReflectionProbe = rp;
+						self.RenderQue[j].ReflectionProbe = rp;
 					}
 					//ReflectionProbePostProcessingShader
 					self.gl.useProgram(self.ReflectionProbePostProcessingShader.program);
@@ -1802,7 +1839,7 @@ var KhawnEngine = function() {
 					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.CubemapFrameBuffer);
 					self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
 					self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_CUBE_MAP_POSITIVE_X+i, this.Cubemap, 0);
-					self.gl.clearColor(0.25,0.25,0.25, 0);
+					self.gl.clearColor(0.0,0.0,0.0, Infinity);
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 				}
@@ -2395,6 +2432,13 @@ var KhawnEngine = function() {
             return this;
         }
     }
+	this.Hue = function(h) {
+		h *= 6;
+		var r = Math.max(Math.min(Math.abs((h%6)-3)-1,1),0);
+		var g = Math.max(Math.min(Math.abs(((h+2)%6)-3)-1,1),0);
+		var b = Math.max(Math.min(Math.abs(((h+4)%6)-3)-1,1),0);
+		return [r,g,b];
+	}
 	this.Wavelength = function(Wavelength) {
 		var Red,Green,Blue;
 		if((Wavelength >= 380) && (Wavelength < 440)) {

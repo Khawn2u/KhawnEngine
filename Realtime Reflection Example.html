@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <title>Test Game Engine</title>
+        <script src="./pako.js"></script>
+        <script src="./KhawnEngine Experimental.js"></script>
+        <style>
+            canvas {
+                width: 90vw;
+            }
+        </style>
+    </head>
+    <body bgcolor="#808080">
+        <center>
+			<canvas id="viewport" width="1920" height="1080"></canvas><br>
+        </center>
+		<script>
+			var Engine = new KhawnEngine();
+			var canvas = document.getElementById("viewport");
+			canvas.onclick = function(e) {
+				canvas.requestFullscreen();
+				setTimeout(function() {
+					canvas.requestPointerLock();
+				}, 10);
+			}
+
+			var Material = new Engine.Material(Engine.DefaultShader,{uColor:[1,1,1],uTexture:Engine.DefaultTexture,Reflectivity:1,Roughness:0,IOR:1.2});
+			var Camera = Engine.CreateCamera(canvas,[1920,1080],90,0.2,false);
+			Camera.transform.traslation.AddToThis(new Engine.Vector3([0,2,3]));
+			Camera.rotateThisAroundYAxis(new Engine.Angle(180));
+			Engine.Root.addChild(Camera);
+
+			var Floor = Engine.CreateMeshObject(Engine.DefaultFlipedCubeMesh,[Engine.DefaultMaterial]);
+			Floor.Name = "Floor Plane";
+			Floor.SetPosition([0,4,0]);
+			Floor.SetScale(8);
+			Engine.Root.addChild(Floor);
+			
+			var LP = new Engine.Components.ReflectionProbe();
+			var O = new Engine.Object();
+			O.AddComponent(LP);
+			O.SetPosition([0,4,0]);
+			Engine.Root.addChild(O);
+			var Sphere;
+			setTimeout(function(){
+				LP.Render();
+				Sphere = Engine.CreateMeshObject(Engine.DefaultUVSphereMesh,[Material]);
+				Sphere.Name = "Sphere";
+				Sphere.SetPosition([0,1,0]);
+				Engine.Root.addChild(Sphere);
+			},1000);
+			var Lights = new Engine.Object();
+			var SunLight = new Engine.Object();
+			SunLight.AddComponent(new Engine.Components.DirectionalLight([0.5,0.5,0.5]));
+			SunLight.rotateThisAroundXAxis(new Engine.Angle(-45));
+			SunLight.rotateThisAroundYAxis(new Engine.Angle(-45));
+			Lights.addChild(SunLight);
+			for (var q=0; q<24; q++) {
+				var Light = new Engine.Object();
+				Light.AddComponent(new Engine.Components.PointLight([Math.random(),Math.random(),Math.random()]));
+				Light.SetPosition([(Math.random()*8)-4,Math.random()*4,(Math.random()*8)-4]);
+				Lights.addChild(Light);
+			}
+			Engine.Root.addChild(Lights);
+
+			canvas.onmousemove = function(e) {
+				if (document.pointerLockElement === canvas) {
+					Camera.rotateThisAroundYAxis(new Engine.Angle(e.movementX/300,true));
+					Camera.rotateThisAroundThisXAxis(new Engine.Angle(e.movementY/100,true));
+				}
+			}
+			var ForwardVector = new Engine.Vector3([0,0,1]).Scale(0.1);
+			var RightVector = new Engine.Vector3([1,0,0]).Scale(0.1);
+			var LeftVector = new Engine.Vector3([-1,0,0]).Scale(0.1);
+			var BackwardVector = new Engine.Vector3([0,0,-1]).Scale(0.1);
+			var UpVector = new Engine.Vector3([0,1,0]).Scale(0.1);
+			var DownVector = new Engine.Vector3([0,-1,0]).Scale(0.1);
+			var HeldDownKeys = {};
+			window.onkeydown = function(e) {
+				if (HeldDownKeys.control) {
+					e.preventDefault();
+				} 
+				HeldDownKeys[e.key.toLowerCase()] = true;
+			}
+			window.onkeyup = function(e) {
+				HeldDownKeys[e.key.toLowerCase()] = false;
+			}
+			window.onmousedown = function(e) {
+				if (e.button == 0) {
+					HeldDownKeys.leftclick = true;
+				}
+			}
+			window.onmouseup = function(e) {
+				if (e.button == 0) {
+					HeldDownKeys.leftclick = false;
+				}
+			}
+			function FrameLoop() {
+				var speed = 0.1;
+				if (HeldDownKeys.control) {
+					speed = 1;
+				} else {
+					speed = 0.5;
+				}
+				if (HeldDownKeys.w) {
+					Camera.transform.traslation.AddToThis(Camera.transform.TransformVector(ForwardVector).Scale(speed));
+				}
+				if (HeldDownKeys.a) {
+					Camera.transform.traslation.AddToThis(Camera.transform.TransformVector(LeftVector).Scale(speed));
+				}
+				if (HeldDownKeys.d) {
+					Camera.transform.traslation.AddToThis(Camera.transform.TransformVector(RightVector).Scale(speed));
+				}
+				if (HeldDownKeys.s) {
+					Camera.transform.traslation.AddToThis(Camera.transform.TransformVector(BackwardVector).Scale(speed));
+				}
+				if (HeldDownKeys[" "]) {
+					Camera.transform.traslation.AddToThis(Camera.transform.TransformVector(UpVector).Scale(speed));
+				}
+				if (HeldDownKeys.shift) {
+					Camera.transform.traslation.AddToThis(Camera.transform.TransformVector(DownVector).Scale(speed));
+				}
+				var t = performance.now()/150;
+				if (Sphere) {
+					Sphere.SetPosition([Math.sin(t/4)*2,1,Math.cos(t/4)*2])
+				}
+				Engine.Update();
+				Engine.Render();
+				requestAnimationFrame(FrameLoop);
+			}
+			FrameLoop();
+		</script>
+    </body>
+</html>
