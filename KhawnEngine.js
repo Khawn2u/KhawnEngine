@@ -6,7 +6,6 @@ var KhawnEngine = function() {
     this.gl = this.canvas.getContext('webgl2',{antialias: true, alpha: true, depth: true, premultipliedAlpha: false});
     this.gl.enable(this.gl.DEPTH_TEST);
     this.gl.depthFunc(this.gl.LEQUAL);
-    this.gl.getExtension('WEBGL_depth_texture');
     this.gl.getExtension('EXT_color_buffer_float');
     this.gl.getExtension('OES_texture_float_linear');
     this.gl.enable(this.gl.CULL_FACE);
@@ -22,42 +21,42 @@ var KhawnEngine = function() {
 	this.Tau = 2*Math.PI;
     this.Texture = function(data,dims) {
         var texture = self.gl.createTexture();
+		this.Image = null;
         self.gl.bindTexture(self.gl.TEXTURE_2D, texture);
 		if (data instanceof Image || data instanceof HTMLCanvasElement) {
 			self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA, self.gl.RGBA, self.gl.UNSIGNED_BYTE, data);
 			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
 			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR);
-			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
-			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.REPEAT);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.REPEAT);
 			this.texture = texture;
 			this.height = data.height;
 			this.width = data.width;
-		} else {
-			if (data instanceof Float32Array) {
-				var res = self.calculateMostEfficientTextureSize(data.length/dims);
-				var a = [self.gl.RED,self.gl.RG,self.gl.RGB,self.gl.RGBA][dims-1];
-				var b = [self.gl.R32F,self.gl.RG32F,self.gl.RGB32F,self.gl.RGBA32F][dims-1];
-				self.gl.texImage2D(self.gl.TEXTURE_2D, 0, b, res[0], res[1], 0, a, self.gl.FLOAT, data);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-				this.texture = texture;
-				this.height = res[1];
-				this.width = res[0];
-			} else {
-				var res = self.calculateMostEfficientTextureSize(data.length/dims);
-				var a = [self.gl.RED_INTEGER,self.gl.RG_INTEGER,self.gl.RGB_INTEGER,self.gl.RGBA_INTEGER][dims-1];
-				var b = [self.gl.R32I,self.gl.RG32I,self.gl.RGB32I,self.gl.RGBA32I][dims-1];
-				self.gl.texImage2D(self.gl.TEXTURE_2D, 0, b, res[0], res[1], 0, a, self.gl.INT, data);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-				this.texture = texture;
-				this.height = res[1];
-				this.width = res[0];
-			}
+			this.Image = data;
+		} else if (data instanceof Float32Array) {
+			var res = self.calculateMostEfficientTextureSize(data.length/dims);
+			var a = [self.gl.RED,self.gl.RG,self.gl.RGB,self.gl.RGBA][dims-1];
+			var b = [self.gl.R32F,self.gl.RG32F,self.gl.RGB32F,self.gl.RGBA32F][dims-1];
+			self.gl.texImage2D(self.gl.TEXTURE_2D, 0, b, res[0], res[1], 0, a, self.gl.FLOAT, data);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.REPEAT);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.REPEAT);
+			this.texture = texture;
+			this.height = res[1];
+			this.width = res[0];
+		} else if (data instanceof Int32Array) {
+			var res = self.calculateMostEfficientTextureSize(data.length/dims);
+			var a = [self.gl.RED_INTEGER,self.gl.RG_INTEGER,self.gl.RGB_INTEGER,self.gl.RGBA_INTEGER][dims-1];
+			var b = [self.gl.R32I,self.gl.RG32I,self.gl.RGB32I,self.gl.RGBA32I][dims-1];
+			self.gl.texImage2D(self.gl.TEXTURE_2D, 0, b, res[0], res[1], 0, a, self.gl.INT, data);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.REPEAT);
+			self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.REPEAT);
+			this.texture = texture;
+			this.height = res[1];
+			this.width = res[0];
 		}
     }
     this.VertexShader = function(source) {
@@ -141,9 +140,11 @@ var KhawnEngine = function() {
 		self.gl.enableVertexAttribArray(this.VertexDataIndexs);
     }
 	this.VertexMapingVertexShader = new self.VertexShader(`#version 300 es
-		const highp vec4 p[4] = vec4[4](vec4(1000000.0,1000000.0,0.0,1.0),vec4(-1000000.0,1000000.0,0.0,1.0),vec4(1000000.0,-1000000.0,0.0,1.0),vec4(-1000000.0,-1000000.0,0.0,1.0));
+		const highp vec4 p[4] = vec4[4](vec4(1.0,1.0,0.0,1.0),vec4(-1.0,1.0,0.0,1.0),vec4(1.0,-1.0,0.0,1.0),vec4(-1.0,-1.0,0.0,1.0));
+		out highp vec4 fragpos;
 		void main(void) {
-			gl_Position = p[gl_VertexID];
+			fragpos = p[gl_VertexID];
+			gl_Position = fragpos;
 		}
 	`);
 	this.PostProcessingShader = function(fs,uniforms) {
@@ -178,6 +179,8 @@ var KhawnEngine = function() {
 					self.gl.uniformMatrix3fv(U.Location,false,value.flat());
 				} else if (U.Type == "mat4") {
 					self.gl.uniformMatrix4fv(U.Location,false,value.flat());
+				} else if (U.Type == "mat2x3") {
+					self.gl.uniformMatrix2x3fv(U.Location,value.flat());
 				} else if (U.Type == "sampler2D") {
 					if (value instanceof Array) {
 						self.gl.uniform1iv(U.Location,value);
@@ -201,6 +204,28 @@ var KhawnEngine = function() {
 			color = vec4(texelFetch(uColorTex,Pos,0).xyz,texelFetch(uPositionTex,Pos,0).w);
 		}
 	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uPositionTex',Type:'sampler2D',Value:1}]);
+	this.MotionBlurPostProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		uniform highp sampler2D uColorTex;
+		uniform highp mat3 uMotionMat;
+		uniform highp vec2 uAspect;
+		
+		highp ivec2 wh;
+		in highp vec4 fragpos;
+		void main(void) {
+			highp vec3 Pos0 = vec3(fragpos.xy*uAspect,1);
+			highp vec3 Pos1 = uMotionMat*Pos0;
+			highp vec3 Color;
+			for (highp float i=0.0; i<1.0; i+=0.0625) {
+				highp vec3 p = mix(Pos0,Pos1,i);
+				Color += texture(uColorTex,((p.xy/(p.z*uAspect))+1.0)/2.0).rgb;
+			}
+			Color *= 0.0625;
+			color = vec4(Color,1.0);
+			// color = vec4(texture(uColorTex,((Pos1.xy/Pos1.z)+1.0)/2.0).rgb,1.0);
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uMotionMat',Type:'mat3'},{Name:'uAspect',Type:'vec2'}]);
 	this.VertexMapingShader = function(fs,uniforms) {
         this.program = self.gl.createProgram();
         this.vs = self.VertexMapingVertexShader;
@@ -213,6 +238,7 @@ var KhawnEngine = function() {
             console.error(self.gl.getProgramInfoLog(this.program));
         }
 		this.notNormals = self.gl.getUniformLocation(this.program, "notNormals");
+		this.BlendShapeWeight = self.gl.getUniformLocation(this.program, "uBlendShapeWeight");
         this.Uniforms = {};
         for (var i = 0; i < uniforms.length; i++) {
 			if (uniforms[i].Value == undefined) {
@@ -271,10 +297,12 @@ var KhawnEngine = function() {
 		uniform highp sampler2D uTransforms[3];
 		uniform highp isampler2D uWeightIndexs;
 		uniform highp sampler2D uWeights;
+		uniform highp sampler2D uBlendShapeAdd;
 		
 		void main(void) {
 			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
 			highp vec4 v = texelFetch(uVertexPositions,Pos,0);
+			v.xyz += texelFetch(uBlendShapeAdd,Pos,0).xyz;
 			highp vec4 VertexP = vec4(v.xyz,notNormals);
 			if (!notNormals) {
 				highp int Wtmp = textureSize(uWeights,0)[0];
@@ -298,7 +326,26 @@ var KhawnEngine = function() {
 				VertexPosition = vec4(normalize(Vertex),0);
 			}
 		}
-	`),[{Name:'uVertexPositions',Type:'sampler2D',Value:0},{Name:'uTransforms',Type:'sampler2D',Value:[1,2,3]},{Name:'uWeightIndexs',Type:'isampler2D',Value:4},{Name:'uWeights',Type:'sampler2D',Value:5}]);
+	`),[{Name:'uVertexPositions',Type:'sampler2D',Value:0},{Name:'uTransforms',Type:'sampler2D',Value:[1,2,3]},{Name:'uWeightIndexs',Type:'isampler2D',Value:4},{Name:'uWeights',Type:'sampler2D',Value:5},{Name:'uBlendShapeAdd',Type:'sampler2D',Value:6}]);
+	this.SkinnedMeshBlendShapeVertexMapingShader = new this.VertexMapingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 VertexPosition;
+		
+		// uniform highp sampler2D uVertexPositions;
+		uniform highp isampler2D uBlendShapeIndexs;
+		uniform highp sampler2D uBlendShapes;
+		uniform highp float uBlendShapeWeight;
+		
+		void main(void) {
+			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
+			highp int idx = texelFetch(uBlendShapeIndexs,Pos,0)[0];
+			if (idx >= 0) {
+				highp int Wid = textureSize(uBlendShapes,0)[0];
+				VertexPosition = vec4(texelFetch(uBlendShapes,ivec2(idx%Wid,idx/Wid),0).xyz,uBlendShapeWeight);
+			} else {
+				VertexPosition = vec4(0);
+			}
+		}
+	`),[{Name:'uBlendShapeIndexs',Type:'isampler2D',Value:0},{Name:'uBlendShapes',Type:'sampler2D',Value:1}]);
 	this.VertexMapingIndexBuffer = self.gl.createBuffer();
 	self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, this.VertexMapingIndexBuffer);
 	self.gl.bufferData(self.gl.ELEMENT_ARRAY_BUFFER, new Uint16Array([0,2,1,3,1,2]), self.gl.STATIC_DRAW);
@@ -310,9 +357,8 @@ var KhawnEngine = function() {
 	this.calculateMostEfficientTextureSize = function(l) {
 		var options = [];
 		var factored = [];
-		var max = l/2;
 		var val = l;
-		for (var i=0; (i<self.Primes.length && self.Primes[i] <= max); i++) {
+		for (var i=0; (i<self.Primes.length && self.Primes[i] <= l); i++) {
 			factored[i] = 0;
 			for (; val%self.Primes[i] == 0;) {
 				val /= self.Primes[i];
@@ -473,12 +519,37 @@ var KhawnEngine = function() {
 		if (this.MeshData.Weights[0] instanceof Float32Array) {
 			var WB = new self.Texture(new Float32Array(this.MeshData.Weights[0].buffer),4);
 		} else {
-			var WB = new self.Texture(new Float32Array(this.MeshData.Weights.flat()),4);
+			if (this.MeshData.Weights[0] instanceof Float64Array) {
+				var WB = new self.Texture(new Float32Array(new Float64Array(this.MeshData.Weights[0].buffer)),4);
+			} else {
+				var WB = new self.Texture(new Float32Array(this.MeshData.Weights.flat()),4);
+			}
 		}
 		if (this.MeshData.WeightIndexs[0] instanceof Int32Array) {
 			var WIB = new self.Texture(new Int32Array(this.MeshData.WeightIndexs[0].buffer),4);
 		} else {
 			var WIB = new self.Texture(new Int32Array(this.MeshData.WeightIndexs.flat()),4);
+		}
+		var BLSP = [];
+		if (this.MeshData.BlendShapes) {
+			for (var i=0; i<this.MeshData.BlendShapes.length; i++) {
+				var BLSPidxs = new Int32Array(this.MeshData.VertexPositions.length).fill(-1);
+				for (var j=0; j<this.MeshData.BlendShapes[i].Indexs.length; j++) {
+					BLSPidxs[this.MeshData.BlendShapes[i].Indexs[j]] = j;
+				}
+				var BLSPidxsTex = new self.Texture(BLSPidxs,1);
+				if (this.MeshData.BlendShapes[i].BlendShapeNormals[0] instanceof Float64Array) {
+					var BLSPnormsTex = new self.Texture(new Float32Array(new Float64Array(this.MeshData.BlendShapes[i].BlendShapeNormals[0].buffer)),3);
+				} else if (this.MeshData.BlendShapes[i].BlendShapeNormals[0] instanceof Float32Array) {
+					var BLSPnormsTex = new self.Texture(new Float32Array(this.MeshData.BlendShapes[i].BlendShapeNormals[0].buffer),3);
+				} else {
+					var BLSPnormsTex = new self.Texture(new Float32Array(this.MeshData.BlendShapes[i].BlendShapeNormals.flat()),3);
+				}
+				if (BLSPnormsTex.height == 1 && BLSPnormsTex.width == 1) {
+					console.log(this.MeshData.BlendShapes[i].BlendShapeNormals.length);
+				}
+				BLSP.push({Name:this.MeshData.BlendShapes[i].Name,BlendShapeNormals:BLSPnormsTex,Indexs:BLSPidxsTex});
+			}
 		}
 		//NormalWeights NormalWeightIndexs
 		this.VertexPositions = VB;
@@ -487,6 +558,7 @@ var KhawnEngine = function() {
 		this.VertexNormalDirections = NB;
 		this.Weights = WB;
 		this.WeightIndexs = WIB;
+		this.BlendShapes = BLSP;
 		//var AllIndices = [];
         for (var i = 0; i < this.MeshData.Indices.length; i++) {
 			var IB = self.gl.createBuffer();
@@ -507,6 +579,8 @@ var KhawnEngine = function() {
     }
     this.FBXdecoder = function() {
         this.parsed = {};
+		this.MeshDatas = [];
+		this.Heigerarchy = {};
         this.parse = function(FBXdata) {
             Error.stackTraceLimit = 128;
             var DataOut = {};
@@ -528,7 +602,7 @@ var KhawnEngine = function() {
                     return {leng:9,Value:new Float64Array(dat.slice(1,9).buffer)[0]};
                 }
                 if (PropertyType == "L") {
-                    return {leng:9,Value:new BigInt64Array(dat.slice(1,9).buffer)[0].toString(16)};
+                    return {leng:9,Value:"0x"+(new BigInt64Array(dat.slice(1,9).buffer)[0].toString(16))};
                     // return {leng:9,Value:new Int32Array(dat.slice(1,9).buffer)[0]};
                 }
                 if (PropertyType == "R") {
@@ -644,9 +718,7 @@ var KhawnEngine = function() {
             this.parsed = DataOut;
         }
         this.decodeData = function() {
-            this.MeshData = [];
-            this.Heigerarchy = [];
-            var Nodes = {"0":{Children:[]}};
+            var Nodes = {"0x0":{Children:[]}};
             var Objects = this.parsed.Objects;
             for (var i=0; i<Objects.length; i++) {
                 var keys = Object.keys(Objects[i]);
@@ -658,7 +730,7 @@ var KhawnEngine = function() {
 						for (var k=0; k<Poses.length; k++) {
 							var PoseNodes = Poses[k].PoseNode;
 							for (var n=0; n<PoseNodes.length; n++) {
-								var NodeID = PoseNodes[n].Node[0].Properties[0].toString();
+								var NodeID = PoseNodes[n].Node[0].Properties[0];
 								if (!Nodes[NodeID]) {
 									Nodes[NodeID] = {Matrix:PoseNodes[n].Matrix};
 								} else {
@@ -669,7 +741,7 @@ var KhawnEngine = function() {
 					} else {
 						for (var k=0; k<Vals.length-1; k++) {
 							var Node = Vals[k];
-							var NodeID = Node.Properties[0].toString();
+							var NodeID = Node.Properties[0];
 							Node.Children = [];
 							if (!Nodes[NodeID]) {
 								Nodes[NodeID] = Node;
@@ -684,8 +756,8 @@ var KhawnEngine = function() {
             for (var i=0; i<Connections.length; i++) {
                 var Connection = Connections[i];
                 if (Connection.Properties[0] == "OO") {
-                    var ParrentID = Connection.Properties[2].toString();
-                    var ChildID = Connection.Properties[1].toString();
+                    var ParrentID = Connection.Properties[2];
+                    var ChildID = Connection.Properties[1];
                     if (Nodes[ParrentID]) {
                         // if (Nodes[ChildID]) {
                         //     Nodes[ChildID].Parent = Nodes[ParrentID];
@@ -694,297 +766,280 @@ var KhawnEngine = function() {
                     }
                 }
             }
-            this.Heigerarchy = Nodes["0"];
+            this.Heigerarchy = Nodes["0x0"];
         }
-        this.toObject = function(Mat) {
-            // var ObjsLst = ["LimbNode"];
-            function parseMesh(N) {
-                //var mshDta = [];
-				//VertexPositions:VertexPositions,VertexDataIndexs:VertexDataIndexs,VertexNormals:newNormals,VertexUVs:newUVs,Indices:newIndcs,NormalWeights:newNormalWeights,NormalWeightIndexs:newNormalWeightIndexs,Weights:newWeights,WeightIndexs:newWeightIndices
-				var mshDta = {Indices:[]};
-                var wIdx = N.Children[0].Children.map(function(nd){return nd.Properties[2]}).indexOf("Skin");
-                var isSkinned = (wIdx !== -1);
-                var Bones = [];
-                var DefPose = [];
-                var mshobj = new self.Object();
-                for (var i=0; i<N.Children.length; i++) {
-                    var Child = N.Children[i];
-                    if (Child) {
-                        var VertexPositionBuffer = Child.Vertices[0].Properties[0];
-                        var VertexPositions = [];
-                        for (var j = 0; j < VertexPositionBuffer.length; j+=3) {
-                            VertexPositions.push(VertexPositionBuffer.subarray(j,j+3));
-                        }
-                        var indcs = Child.PolygonVertexIndex[0].Properties[0];
+		this.ParseMesh = function(N) {
+			var mshDta = {Indices:[]};
+			var proptyps = N.Children[0].Children.map(function(nd){return nd.Properties[2]});
+			var wIdx = proptyps.indexOf("Skin");
+			var bIdx = proptyps.indexOf("BlendShape");
+			var isSkinned = (wIdx !== -1);
+			var hasBlendShapes =  (bIdx !== -1);
+			var Bones = [];
+			var BoneNodeIDs = [];
+			for (var i=0; i<N.Children.length; i++) {
+				var Child = N.Children[i];
+				if (Child && Child.Vertices) {
+					var VertexPositionBuffer = Child.Vertices[0].Properties[0];
+					var VertexPositions = [];
+					for (var j = 0; j < VertexPositionBuffer.length; j+=3) {
+						VertexPositions.push(VertexPositionBuffer.subarray(j,j+3));
+					}
+					var indcs = Child.PolygonVertexIndex[0].Properties[0];
+					if (Child.LayerElementUV) {
 						var UVs = Child.LayerElementUV[0].UV[0].Properties[0];
 						var UVIdxs = Child.LayerElementUV[0].UVIndex[0].Properties[0];
-						var Normals = Child.LayerElementNormal[0].Normals[0].Properties[0];
-						var newUVs = [];
-						for (var j = 0; j < UVs.length; j+=2) {
-							UVs[j+1] = 1-UVs[j+1];
-							newUVs.push(UVs.subarray(j,j+2));
-                        }
-						var NormalIdxs = [];
-						var newNorms = [];
-						var NormLookup = {};
-						for (var j=0; j<Normals.length; j+=3) {
-							//var n = Array.from(Normals.subarray(j,j+3));
-							var n = [Normals[j],Normals[j+1],Normals[j+2]];
-							var idx = NormLookup[n];
-							if (!idx) {
-								newNorms.push([n[0],n[1],n[2],0]);
-								idx = newNorms.length-1;
-								NormLookup[n] = idx;
-							}
-							NormalIdxs.push(idx);
+					} else {
+						var UVs = new Float64Array(2);
+						var UVIdxs = new Int32Array(0);
+					}
+					var Normals = Child.LayerElementNormal[0].Normals[0].Properties[0];
+					var newUVs = [];
+					for (var j = 0; j < UVs.length; j+=2) {
+						UVs[j+1] = 1-UVs[j+1];
+						newUVs.push(UVs.subarray(j,j+2));
+					}
+					var NormalIdxs = [];
+					var newNorms = [];
+					var NormLookup = {};
+					for (var j=0; j<Normals.length; j+=3) {
+						//var n = Array.from(Normals.subarray(j,j+3));
+						var n = [Normals[j],Normals[j+1],Normals[j+2]];
+						var idx = NormLookup[n];
+						if (!idx) {
+							newNorms.push([n[0],n[1],n[2],0]);
+							idx = newNorms.length-1;
+							NormLookup[n] = idx;
 						}
-						delete NormLookup;
-						var NormBuffer = new Float32Array(newNorms.flat());
-						var newNormals = [];
-						for (var j = 0; j < NormBuffer.length; j+=4) {
-                            newNormals.push(NormBuffer.subarray(j,j+4));
-                        }
-                        var newIndcsBuffr = [];
-                        var newIndcs2 = [];
-						var vertIdxs = [];
-						var vartIdxDataLookup = {};
-						for (var j = 0; j < indcs.length; j++) {
-							var v = indcs[j];
-							v = (v < 0) ? ((-v)-1) : v;
-							var u = UVIdxs[j];
-							var n = NormalIdxs[j];
-							var vtx = [v,n,u];
-							var vtxidx = vartIdxDataLookup[vtx];
-							if (vtxidx) {
-								newIndcs2.push(vtxidx);
+						NormalIdxs.push(idx);
+					}
+					delete NormLookup;
+					var NormBuffer = new Float32Array(newNorms.flat());
+					var newNormals = [];
+					for (var j = 0; j < NormBuffer.length; j+=4) {
+						newNormals.push(NormBuffer.subarray(j,j+4));
+					}
+					var newIndcsBuffr = [];
+					var newIndcs2 = [];
+					var vertIdxs = [];
+					var vartIdxDataLookup = {};
+					for (var j = 0; j < indcs.length; j++) {
+						var v = indcs[j];
+						v = (v < 0) ? ((-v)-1) : v;
+						var u = UVIdxs[j];
+						var n = NormalIdxs[j];
+						var vtx = [v,n,u];
+						var vtxidx = vartIdxDataLookup[vtx];
+						if (vtxidx) {
+							newIndcs2.push(vtxidx);
+						} else {
+							newNormals[n][3] = v;
+							newIndcs2.push(vertIdxs.length);
+							vartIdxDataLookup[vtx] = vertIdxs.length;
+							vertIdxs.push(vtx);
+						}
+					}
+					delete vartIdxDataLookup;
+					var newIndcs = [];
+					for (var j = 0; j < indcs.length;) {
+						for (var k = 1; true; k++) {
+							if (indcs[j+k+1] >= 0) {
+								newIndcsBuffr.push(newIndcs2[j]);
+								newIndcsBuffr.push(newIndcs2[j+k]);
+								newIndcsBuffr.push(newIndcs2[j+k+1]);
 							} else {
-								newNormals[n][3] = v;
-								newIndcs2.push(vertIdxs.length);
-								vartIdxDataLookup[vtx] = vertIdxs.length;
-								vertIdxs.push(vtx);
+								newIndcsBuffr.push(newIndcs2[j]);
+								newIndcsBuffr.push(newIndcs2[j+k]);
+								newIndcsBuffr.push(newIndcs2[j+k+1]);
+								j += k+2;
+								break;
 							}
 						}
-						delete vartIdxDataLookup;
-                        var newIndcs = [];
-                        for (var j = 0; j < indcs.length;) {
-                            for (var k = 1; true; k++) {
-                                if (indcs[j+k+1] >= 0) {
-                                    newIndcsBuffr.push(newIndcs2[j]);
-                                    newIndcsBuffr.push(newIndcs2[j+k]);
-                                    newIndcsBuffr.push(newIndcs2[j+k+1]);
-                                } else {
-                                    newIndcsBuffr.push(newIndcs2[j]);
-                                    newIndcsBuffr.push(newIndcs2[j+k]);
-                                    newIndcsBuffr.push(newIndcs2[j+k+1]);
-                                    j += k+2;
-                                    break;
-                                }
-                            }
-                        }
-                        newIndcsBuffr = new Uint16Array(newIndcsBuffr);
-                        for (var j = 0; j < newIndcsBuffr.length; j+=3) {
-                            newIndcs.push(newIndcsBuffr.subarray(j,j+3));
-                        }
-						var VertexDataIndexBuffer = new Int32Array(vertIdxs.flat());
-						var VertexDataIndexs = [];
-						for (var j = 0; j < VertexDataIndexBuffer.length; j+=3) {
-                            VertexDataIndexs.push(VertexDataIndexBuffer.subarray(j,j+3));
-                        }
-                        if (isSkinned) {
-                            var WeightData = [];
-                            var idx = 0;
-                            for (var j = 0; j < Child.Children[wIdx].Children.length; j++) {
-                                if (Child.Children[wIdx].Children[j]) {
-                                    //if (Child.Children[wIdx].Children[j].Indexes) {
-										var Nme = Child.Children[wIdx].Children[j].Properties[1].split("\x00")[0];
-                                        Bones.push(Nme);
-                                        
-                                        var P = Child.Children[wIdx].Children[j].Children[0].Properties70[0].P;
-                                        var Rot, Scale, Pos;
-                                        for (var k = 0; k < P.length; k++) {
-                                            if (P[k].Properties[0] == "Lcl Scaling") {
-                                                Scale = P[k].Properties.slice(-3);
-                                            } else if (P[k].Properties[0] == "Lcl Rotation") {
-                                                Rot = new self.EulerAngles(P[k].Properties.slice(-3)).toMatrix()//.toRadians();
-                                            } else if (P[k].Properties[0] == "Lcl Translation") {
-                                                Pos = new self.Vector3(P[k].Properties.slice(-3));
-                                            }
-                                        }
-										/*
-										if (Nme == "Tail") {
-											//console.log(Rot);
-											//Rot.value[0].value -= 45;
-											Rot.rotateThisAroundThisXAxis(new self.Angle(90));
-											Rot.rotateThisAroundYAxis(new self.Angle(180));
-										}
-										*/
-                                        var Mat = Rot;//.ScaleXYZ(Scale[0],Scale[1],Scale[2]);
-										
-										//var M = Child.Children[wIdx].Children[j].Children[0].Matrix[0].Properties[0];
-										//var M = Child.Children[wIdx].Children[j].Transform[0].Properties[0];
-										//var M = Child.Children[wIdx].Children[j].TransformAssociateModel[0].Properties[0];
-										//var M = Child.Children[wIdx].Children[j].TransformLink[0].Properties[0];
-										//var Mat = new self.Matrix3x3([[M[0],M[1],M[2]],[M[4],M[5],M[6]],[M[8],M[9],M[10]]]);//.Scale(0.01);
-										//var Mat = new self.Matrix3x3([[M[0],M[1],M[2]],[-M[8],-M[9],-M[10]],[M[4],M[5],M[6]]])//.Scale(0.01);
-										//var Pos = new self.Vector3([M[12],M[13],M[14]]).Scale(0.01);
-                                        var NodeTransform = new self.transform(Pos,Mat);
-                                        DefPose.push(NodeTransform);
-										if (Child.Children[wIdx].Children[j].Indexes) {
-											var WeightIndices = Child.Children[wIdx].Children[j].Indexes[0].Properties[0];
-											var weights = Child.Children[wIdx].Children[j].Weights[0].Properties[0];
-											for (var k = 0; k < WeightIndices.length; k++) {
-												if (WeightData[WeightIndices[k]]) {
-													WeightData[WeightIndices[k]].push({Weight:weights[k],Index:idx});
-												} else {
-													WeightData[WeightIndices[k]] = [{Weight:weights[k],Index:idx}];
-												}
+					}
+					newIndcsBuffr = new Uint16Array(newIndcsBuffr);
+					for (var j = 0; j < newIndcsBuffr.length; j+=3) {
+						newIndcs.push(newIndcsBuffr.subarray(j,j+3));
+					}
+					var VertexDataIndexBuffer = new Int32Array(vertIdxs.flat());
+					var VertexDataIndexs = [];
+					for (var j = 0; j < VertexDataIndexBuffer.length; j+=3) {
+						VertexDataIndexs.push(VertexDataIndexBuffer.subarray(j,j+3));
+					}
+					if (isSkinned) {
+						var BlendShapes = [];
+						if (hasBlendShapes) {
+							for (var j = 0; j < Child.Children[bIdx].Children.length; j++) {
+								if (Child.Children[bIdx].Children[j]) {
+									var Nme = Child.Children[bIdx].Children[j].Properties[1].split("\x00")[0];
+									var DataChild = Child.Children[bIdx].Children[j].Children[0];
+									if (DataChild) {
+										if (DataChild.Indexes[0].Properties[0].length) {
+											var BlndShpeNormals = [];
+											for (var k=0; k<DataChild.Vertices[0].Properties[0].length; k+=3) {
+												BlndShpeNormals.push(DataChild.Vertices[0].Properties[0].subarray(k,k+3));
 											}
+											BlendShapes.push({Name:Nme,BlendShapeNormals:BlndShpeNormals,Indexs:DataChild.Indexes[0].Properties[0]});
 										}
-                                        idx++;
-                                    //}
-                                }
-                            }
-                            var newWeights = [];
-                            var newWeightIndices = [];
-                            var WeightsBuffer = new Float32Array(WeightData.length*4).fill(0);
-                            //var WeightIndicesBuffer = new Float32Array(WeightData.length*4).fill(0);
-							var WeightIndicesBuffer = new Int32Array(WeightData.length*4).fill(0);
-                            var empty = [{Index:0,Weight:0},{Index:0,Weight:0},{Index:0,Weight:0},{Index:0,Weight:0}];
-                            for (var j = 0; j < WeightData.length; j++) {
-                                WeightData[j] = WeightData[j].sort(function(a,b) {return b.Weight - a.Weight;}).concat(empty).slice(0,4);
-                                var sum = WeightData[j][0].Weight + WeightData[j][1].Weight + WeightData[j][2].Weight + WeightData[j][3].Weight;
-                                WeightIndicesBuffer.set([WeightData[j][0].Index,WeightData[j][1].Index,WeightData[j][2].Index,WeightData[j][3].Index],j*4);
-                                WeightsBuffer.set([WeightData[j][0].Weight/sum,WeightData[j][1].Weight/sum,WeightData[j][2].Weight/sum,WeightData[j][3].Weight/sum],j*4);
-                                newWeights.push(WeightsBuffer.subarray(j*4,j*4+4));
-                                newWeightIndices.push(WeightIndicesBuffer.subarray(j*4,j*4+4));
-                            }
-							//NormalWeights NormalWeightIndexs
-							//mshDta.push({VertexPositions:VertexPositions,VertexDataIndexs:VertexDataIndexs,VertexNormals:newNormals,VertexUVs:newUVs,Indices:newIndcs,NormalWeights:newNormalWeights,NormalWeightIndexs:newNormalWeightIndexs,Weights:newWeights,WeightIndexs:newWeightIndices});
-							
-							mshDta.VertexPositions = VertexPositions;
-							mshDta.VertexDataIndexs = VertexDataIndexs;
-							mshDta.VertexNormals = newNormals;
-							mshDta.VertexUVs = newUVs;
-							mshDta.Weights = newWeights;
-							mshDta.WeightIndexs = newWeightIndices;
-							mshDta.Indices.push(newIndcs);
-							console.log(Bones);
-							//mshDta.push({VertexPositions:VertexPositions,VertexDataIndexs:VertexDataIndexs,VertexNormals:newNormals,VertexUVs:newUVs,Indices:newIndcs,Weights:newWeights,WeightIndexs:newWeightIndices});
+									}
+								}
+							}
+							console.log(BlendShapes);
+						}
+
+						var WeightData = [];
+						var idx = 0;
+						for (var j = 0; j < Child.Children[wIdx].Children.length; j++) {
+							if (Child.Children[wIdx].Children[j]) {
+								var Nme = Child.Children[wIdx].Children[j].Properties[1].split("\x00")[0];
+								Bones.push(Nme);
+								BoneNodeIDs.push(Child.Children[wIdx].Children[j].Children[0].Properties[0]);
+								if (Child.Children[wIdx].Children[j].Indexes) {
+									var WeightIndices = Child.Children[wIdx].Children[j].Indexes[0].Properties[0];
+									var weights = Child.Children[wIdx].Children[j].Weights[0].Properties[0];
+									for (var k = 0; k < WeightIndices.length; k++) {
+										if (WeightData[WeightIndices[k]]) {
+											WeightData[WeightIndices[k]].push({Weight:weights[k],Index:idx});
+										} else {
+											WeightData[WeightIndices[k]] = [{Weight:weights[k],Index:idx}];
+										}
+									}
+								}
+								idx++;
+							}
+						}
+						var newWeights = [];
+						var newWeightIndices = [];
+						var WeightsBuffer = new Float32Array(WeightData.length*4).fill(0);
+						//var WeightIndicesBuffer = new Float32Array(WeightData.length*4).fill(0);
+						var WeightIndicesBuffer = new Int32Array(WeightData.length*4).fill(0);
+						var empty = [{Index:0,Weight:0},{Index:0,Weight:0},{Index:0,Weight:0},{Index:0,Weight:0}];
+						for (var j = 0; j < WeightData.length; j++) {
+							WeightData[j] = WeightData[j].sort(function(a,b) {return b.Weight - a.Weight;}).concat(empty).slice(0,4);
+							var sum = WeightData[j][0].Weight + WeightData[j][1].Weight + WeightData[j][2].Weight + WeightData[j][3].Weight;
+							WeightIndicesBuffer.set([WeightData[j][0].Index,WeightData[j][1].Index,WeightData[j][2].Index,WeightData[j][3].Index],j*4);
+							WeightsBuffer.set([WeightData[j][0].Weight/sum,WeightData[j][1].Weight/sum,WeightData[j][2].Weight/sum,WeightData[j][3].Weight/sum],j*4);
+							newWeights.push(WeightsBuffer.subarray(j*4,j*4+4));
+							newWeightIndices.push(WeightIndicesBuffer.subarray(j*4,j*4+4));
+						}
+						//NormalWeights NormalWeightIndexs
+						//mshDta.push({VertexPositions:VertexPositions,VertexDataIndexs:VertexDataIndexs,VertexNormals:newNormals,VertexUVs:newUVs,Indices:newIndcs,NormalWeights:newNormalWeights,NormalWeightIndexs:newNormalWeightIndexs,Weights:newWeights,WeightIndexs:newWeightIndices});
+
+						mshDta.VertexPositions = VertexPositions;
+						mshDta.VertexDataIndexs = VertexDataIndexs;
+						mshDta.VertexNormals = newNormals;
+						mshDta.VertexUVs = newUVs;
+						mshDta.Weights = newWeights;
+						mshDta.WeightIndexs = newWeightIndices;
+						mshDta.BlendShapes = BlendShapes;
+						mshDta.Indices.push(newIndcs);
+						//mshDta.push({VertexPositions:VertexPositions,VertexDataIndexs:VertexDataIndexs,VertexNormals:newNormals,VertexUVs:newUVs,Indices:newIndcs,Weights:newWeights,WeightIndexs:newWeightIndices});
+					} else {
+						//mshDta.push({VertexPositions:VertexPositions,VertexNormals:newNormals,VertexDataIndexs:VertexDataIndexs,VertexUVs:newUVs,Indices:newIndcs});
+						mshDta.VertexPositions = VertexPositions;
+						mshDta.VertexDataIndexs = VertexDataIndexs;
+						mshDta.VertexNormals = newNormals;
+						mshDta.VertexUVs = newUVs;
+						mshDta.Indices.push(newIndcs);
+					}
+				}
+			}
+			if (isSkinned) {
+				return {MeshData:mshDta,Bones:Bones,isSkinned:true,BoneNodeIDs:BoneNodeIDs};
+				//return {MeshData:mshDta,isSkinned:false};
+			} else {
+				return {MeshData:mshDta,isSkinned:false};
+			}
+		}
+		this.toMeshDataArray = function() {
+			this.MeshDatas = [];
+			var dis = this;
+            function findAndAddMeshes(nde) {
+				for (var i=0; i<nde.Children.length; i++) {
+                    if (nde.Children[i]) {
+                        var nt = nde.Children[i].Properties[1].split("\x00\x01");
+                        var Name = nt[0];
+                        var Type0 = nt[1];
+                        var Type1 = nde.Children[i].Properties[2];
+						var nodeID = nde.Children[i].Properties[0];
+                        if (Type1 == "Mesh") {
+                            dis.MeshDatas.push({Data:dis.ParseMesh(nde.Children[i]),nodeID:nodeID});
                         } else {
-							//mshDta.push({VertexPositions:VertexPositions,VertexNormals:newNormals,VertexDataIndexs:VertexDataIndexs,VertexUVs:newUVs,Indices:newIndcs});
-							mshDta.VertexPositions = VertexPositions;
-							mshDta.VertexDataIndexs = VertexDataIndexs;
-							mshDta.VertexNormals = newNormals;
-							mshDta.VertexUVs = newUVs;
-							mshDta.Indices.push(newIndcs);
-                        }
+							findAndAddMeshes(nde.Children[i]);
+						}
                     }
                 }
-                if (isSkinned) {
-                    return {MeshData:mshDta,Bones:Bones,isSkinned:true,DefaultPose:DefPose};
-					//return {MeshData:mshDta,isSkinned:false};
-                } else {
-                    return {MeshData:mshDta,isSkinned:false};
-                }
-            }
-            var Limbs = [];
-            var MeshDatas = [];
-            function makeChildren(nde,prt) {
+			}
+			findAndAddMeshes(this.Heigerarchy);
+			return this.MeshDatas.map(function(ms){return ms.Data});
+		}
+        this.toObject = function(Mat) {
+			this.toMeshDataArray();
+			var NodeIDObjectLookup = {};
+			var dis = this;
+            function makeChildren(nde,prt,trsfm) {
                 for (var i=0; i<nde.Children.length; i++) {
                     if (nde.Children[i]) {
                         var nt = nde.Children[i].Properties[1].split("\x00\x01");
                         var Name = nt[0];
                         var Type0 = nt[1];
                         var Type1 = nde.Children[i].Properties[2];
+						var nodeID = nde.Children[i].Properties[0];
+						var NodeTransform = self.IdentityTransform;
+						if (nde.Children[i].Matrix) {
+							var M = nde.Children[i].Matrix[0].Properties[0];
+							var Mat = new self.Matrix3x3([[M[0],M[1],M[2]],[M[4],M[5],M[6]],[M[8],M[9],M[10]]]).Transpose().ScaleThisBy(0.01);
+							var Pos = new self.Vector3([M[12],M[13],M[14]]).ScaleThisBy(0.01);
+							NodeTransform = new self.transform(Pos,Mat);
+						}
                         if (Type1 == "Mesh") {
                             var newobj = new self.Object();
-                            MeshDatas.push({Data:parseMesh(nde.Children[i]),Object:newobj});
-                            prt.addChild(newobj);
+							newobj.Name = Name;
+							prt.addChild(newobj);
+							newobj.transform = trsfm.InverseTransformTransform(NodeTransform);
+							NodeIDObjectLookup[nodeID] = newobj;
                         } else {
                            if (Type1 !== "Null") {
                                 if (Type0 !== "NodeAttribute") {
                                     var newobj = new self.Object();
                                     newobj.Name = Name;
-                                    var nod = nde.Children[i];
-                                    //prt.addChildKeepTransform(makeChildren(nde.Children[i],newobj));
-									prt.addChild(makeChildren(nde.Children[i],newobj));
-                                    if (Type1 == "LimbNode") {
-										/*
-										var P = nde.Children[i].Children[0].Properties70[0].P;
-										var Rot, Scale, Pos;
-										for (var k = 0; k < P.length; k++) {
-                                            if (P[k].Properties[0] == "Lcl Scaling") {
-                                                Scale = P[k].Properties.slice(-3);
-                                            } else if (P[k].Properties[0] == "Lcl Rotation") {
-                                                Rot = new self.EulerAngles(P[k].Properties.slice(-3)).toMatrix()//.toRadians();
-                                            } else if (P[k].Properties[0] == "Lcl Translation") {
-                                                Pos = new self.Vector3(P[k].Properties.slice(-3));
-                                            }
-                                        }
-										newobj.transform = new self.transform(Pos,Rot);
-										*/
-                                        Limbs.push(newobj);
-                                    }
-                                }
+									NodeIDObjectLookup[nodeID] = newobj;
+									newobj.transform = trsfm.InverseTransformTransform(NodeTransform);
+									prt.addChild(makeChildren(nde.Children[i],newobj,NodeTransform));
+                                } else {
+									NodeIDObjectLookup[nodeID] = prt;
+								}
                             } else {
-                                makeChildren(nde.Children[i],prt);
+								NodeIDObjectLookup[nodeID] = prt;
+                                makeChildren(nde.Children[i],prt,trsfm.TransformTransform(NodeTransform));
                             }
                         }
                     }
                 }
                 return prt;
             }
-            var Obj = makeChildren(this.Heigerarchy,new self.Object());
-            for (var i=0; i<MeshDatas.length; i++) {
-                if (MeshDatas[i].Data.isSkinned) {
-					function setPose(plst,oj,blst,trsfm) {
-						var boneIdx = blst.indexOf(oj.Name);
-						if (boneIdx === -1) {
-							for (var s=0; s<oj.Children.length; s++) {
-								setPose(plst,oj.Children[s],blst,oj.transform.TransformTransform(trsfm));
-							}
-						} else {
-							oj.transform = trsfm.InverseTransformTransform(plst[boneIdx]);
-							//oj.transform = plst[boneIdx];
-							for (var s=0; s<oj.Children.length; s++) {
-								setPose(plst,oj.Children[s],blst,plst[boneIdx]);
-							}
-						}
-					}
-					//setPose(MeshDatas[i].Data.DefaultPose,Obj,MeshDatas[i].Data.Bones,Obj.transform);
-					
-					for (var j=0; j<Limbs.length; j++) {
-						var boneIdx = MeshDatas[i].Data.Bones.indexOf(Limbs[j].Name);
-						if (boneIdx !== -1) {
-							Limbs[j].transform = MeshDatas[i].Data.DefaultPose[boneIdx];
-						}
-					}
-					
+            var Obj = makeChildren(this.Heigerarchy,new self.Object(),self.IdentityTransform);
+            for (var i=0; i<this.MeshDatas.length; i++) {
+                if (this.MeshDatas[i].Data.isSkinned) {
 					var DefaultPose = [];
-                    for (var j=0; j<Limbs.length; j++) {
-                        var boneIdx = MeshDatas[i].Data.Bones.indexOf(Limbs[j].Name);
-                        if (boneIdx !== -1) {
-                            DefaultPose[boneIdx] = Limbs[j].getGlobalTransform();
-                        }
+                    for (var j=0; j<this.MeshDatas[i].Data.BoneNodeIDs.length; j++) {
+						//console.log(this.MeshDatas[i].Data.BoneNodeIDs[j],NodeIDObjectLookup[this.MeshDatas[i].Data.BoneNodeIDs[j]]);
+						DefaultPose[j] = NodeIDObjectLookup[this.MeshDatas[i].Data.BoneNodeIDs[j]].getGlobalTransform();
                     }
-                    var Mesh = new self.SkinnedMesh(MeshDatas[i].Data.MeshData,DefaultPose,MeshDatas[i].Data.Bones);
-                    var Component = new self.Components.SkinnedMeshRenderer(Mesh,new Array(MeshDatas[i].Data.MeshData.length).fill(Mat || self.DefaultMaterial));
-                    for (var j=0; j<Limbs.length; j++) {
-                        var boneIdx = Component.SkinnedMesh.Bones.indexOf(Limbs[j].Name);
-                        if (boneIdx !== -1) {
-                            Component.SetBoneRefrence(boneIdx,Limbs[j]);
-                            //var DebugBone = new self.CreateMeshObject(self.DebugBoneMesh,[self.DefaultMaterial]);
-                            //Limbs[j].addChild(DebugBone);
-                        }
+                    var Mesh = new self.SkinnedMesh(this.MeshDatas[i].Data.MeshData,DefaultPose,this.MeshDatas[i].Data.Bones);
+                    var Component = new self.Components.SkinnedMeshRenderer(Mesh,new Array(this.MeshDatas[i].Data.MeshData.Indices.length).fill(Mat || self.DefaultMaterial));
+                    for (var j=0; j<this.MeshDatas[i].Data.Bones.length; j++) {
+						Component.SetBoneRefrence(j,NodeIDObjectLookup[this.MeshDatas[i].Data.BoneNodeIDs[j]]);
+						//var DebugBone = new self.CreateMeshObject(self.DebugBoneMesh,[self.DefaultMaterial]);
+						//NodeIDObjectLookup[this.MeshDatas[i].Data.BoneNodeIDs[j]].addChild(DebugBone);
                     }
-					MeshDatas[i].Object.Name = "Skinned Mesh";
+					//MeshDatas[i].Object.Name = "Skinned Mesh";
 					//Component.Enabled = false;
-                    MeshDatas[i].Object.AddComponent(Component);
+					//nodeID
+                    NodeIDObjectLookup[this.MeshDatas[i].nodeID].AddComponent(Component);
                 } else {
-                    var Mesh = new self.Mesh(MeshDatas[i].Data.MeshData);
-                    var Component = new self.Components.MeshRenderer(Mesh,new Array(MeshDatas[i].Data.MeshData.length).fill(Mat || self.DefaultMaterial));
-					MeshDatas[i].Object.Name = "Static Mesh";
-                    MeshDatas[i].Object.AddComponent(Component);
+                    var Mesh = new self.Mesh(this.MeshDatas[i].Data.MeshData);
+                    var Component = new self.Components.MeshRenderer(Mesh,new Array(this.MeshDatas[i].Data.MeshData.Indices.length).fill(Mat || self.DefaultMaterial));
+                    NodeIDObjectLookup[this.MeshDatas[i].nodeID].AddComponent(Component);
 				}
             }
             // console.log(LimbNodes);
@@ -992,13 +1047,223 @@ var KhawnEngine = function() {
             return Obj;
         }
     }
+	this.OBJdecoder = function() {
+		this.parsed = {};
+		this.decoded = {};
+		this.parse = function(OBJdata) {
+			var TxtDcdr = new TextDecoder();
+			OBJdata = TxtDcdr.decode(OBJdata).split("\n");
+			for (var i=0; i<OBJdata.length; i++) {
+				OBJdata[i] = OBJdata[i].replaceAll("  "," ").replaceAll("  "," ").replaceAll("  "," ");
+				if (!OBJdata[i]) {
+					OBJdata.splice(i,1);
+					i--;
+				}
+			}
+			this.parsed = OBJdata;
+		}
+		this.decodeData = function() {
+			this.decoded = {VertexPositions:[],VertexNormals:[],VertexUVs:[],VertexDataIndexs:[],Indices:[[]]};
+			var IdxLookup = {};
+			var Mtrl = -1;
+			for (var i=0; i<this.parsed.length; i++) {
+				var cur = this.parsed[i].split(" ");
+				var type = cur.splice(0,1)[0];
+				if (type == "v") {
+					this.decoded.VertexPositions.push([parseFloat(cur[0]),parseFloat(cur[1]),parseFloat(cur[2])]);
+				} else if (type == "vt") {
+					this.decoded.VertexUVs.push([parseFloat(cur[0]),parseFloat(cur[1])]);
+				} else if (type == "vn") {
+					cur = [parseFloat(cur[0]) || 0,parseFloat(cur[1]) || 0,parseFloat(cur[2]) || 0];
+					var l = Math.hypot(cur[0],cur[1],cur[2]);
+					cur[0] /= l;
+					cur[1] /= l;
+					cur[2] /= l;
+					this.decoded.VertexNormals.push(cur);
+				} else if (type == "f") {
+					for (var j=0; j<cur.length; j++) {
+						cur[j] = cur[j].split("/");
+						cur[j] = [parseInt(cur[j][0])-1,parseInt(cur[j][2])-1 || 0,parseInt(cur[j][1])-1 || 0];
+						if (isNaN(cur[j][0])) {
+							cur.splice(j,1);
+							j--;
+						} else {
+							if (IdxLookup[cur[j]]) {
+								cur[j] = IdxLookup[cur[j]];
+							} else {
+								IdxLookup[cur[j]] = this.decoded.VertexDataIndexs.length;
+								this.decoded.VertexDataIndexs.push(cur[j]);
+								cur[j] = this.decoded.VertexDataIndexs.length-1;
+							}
+						}
+					}
+					for (var j=2; j<cur.length; j++) {
+						this.decoded.Indices[Mtrl == -1 ? 0 : Mtrl].push([cur[0],cur[j-1],cur[j]]);
+						//this.decoded.Indices[Mtrl == -1 ? 0 : Mtrl].push([cur[j-(j%3)],cur[j-1],cur[j]]);
+					}
+				} else if (type == "usemtl") {
+					Mtrl++;
+					if (Mtrl > 0) {
+						this.decoded.Indices.push([]);
+					}
+				}
+			}
+		}
+		this.toMesh = function() {
+			return new self.Mesh(this.decoded);
+		}
+		this.toObject = function(Mats) {
+			if (Mats instanceof Array) {
+				return self.CreateMeshObject(this.toMesh(),Mats);
+			} else {
+				return self.CreateMeshObject(this.toMesh(),new Array(this.decoded.Indices.length).fill(Mats || self.DefaultMaterial));
+			}
+		}
+	}
+	this.Japaneasetuples = [['ｳﾞ','ヴ'],['ｶﾞ','ガ'],['ｷﾞ','ギ'],['ｸﾞ','グ'],['ｹﾞ','ゲ'],['ｺﾞ','ゴ'],['ｻﾞ','ザ'],['ｼﾞ','ジ'],['ｽﾞ','ズ'],['ｾﾞ','ゼ'],['ｿﾞ','ゾ'],['ﾀﾞ','ダ'],['ﾁﾞ','ヂ'],['ﾂﾞ','ヅ'],['ﾃﾞ','デ'],['ﾄﾞ','ド'],['ﾊﾞ','バ'],['ﾊﾟ','パ'],['ﾋﾞ','ビ'],['ﾋﾟ','ピ'],['ﾌﾞ','ブ'],['ﾌﾟ','プ'],['ﾍﾞ','ベ'],['ﾍﾟ','ペ'],['ﾎﾞ','ボ'],['ﾎﾟ','ポ'],['｡','。'],['｢','「'],['｣','」'],['､','、'],['･','・'],['ｦ','ヲ'],['ｧ','ァ'],['ｨ','ィ'],['ｩ','ゥ'],['ｪ','ェ'],['ｫ','ォ'],['ｬ','ャ'],['ｭ','ュ'],['ｮ','ョ'],['ｯ','ッ'],['ｰ','ー'],['ｱ','ア'],['ｲ','イ'],['ｳ','ウ'],['ｴ','エ'],['ｵ','オ'],['ｶ','カ'],['ｷ','キ'],['ｸ','ク'],['ｹ','ケ'],['ｺ','コ'],['ｻ','サ'],['ｼ','シ'],['ｽ','ス'],['ｾ','セ'],['ｿ','ソ'],['ﾀ','タ'],['ﾁ','チ'],['ﾂ','ツ'],['ﾃ','テ'],['ﾄ','ト'],['ﾅ','ナ'],['ﾆ','ニ'],['ﾇ','ヌ'],['ﾈ','ネ'],['ﾉ','ノ'],['ﾊ','ハ'],['ﾋ','ヒ'],['ﾌ','フ'],['ﾍ','ヘ'],['ﾎ','ホ'],['ﾏ','マ'],['ﾐ','ミ'],['ﾑ','ム'],['ﾒ','メ'],['ﾓ','モ'],['ﾔ','ヤ'],['ﾕ','ユ'],['ﾖ','ヨ'],['ﾗ','ラ'],['ﾘ','リ'],['ﾙ','ル'],['ﾚ','レ'],['ﾛ','ロ'],['ﾜ','ワ'],['ﾝ','ン']];
+	this.Japaneasetranslate = [['全ての親','ParentNode'],['操作中心','ControlNode'],['センター','Center'],['ｾﾝﾀｰ','Center'],['グループ','Group'],['グルーブ','Groove'],['キャンセル','Cancel'],['上半身','UpperBody'],['下半身','LowerBody'],['手首','Wrist'],['足首','Ankle'],['首','Neck'],['頭','Head'],['顔','Face'],['下顎','Chin'],['下あご','Chin'],['あご','Jaw'],['顎','Jaw'],['両目','Eyes'],['目','Eye'],['眉','Eyebrow'],['舌','Tongue'],['涙','Tears'],['泣き','Cry'],['歯','Teeth'],['照れ','Blush'],['青ざめ','Pale'],['ガーン','Gloom'],['汗','Sweat'],['怒','Anger'],['感情','Emotion'],['符','Marks'],['暗い','Dark'],['腰','Waist'],['髪','Hair'],['三つ編み','Braid'],['胸','Breast'],['乳','Boob'],['おっぱい','Tits'],['筋','Muscle'],['腹','Belly'],['鎖骨','Clavicle'],['肩','Shoulder'],['腕','Arm'],['うで','Arm'],['ひじ','Elbow'],['肘','Elbow'],['手','Hand'],['親指','Thumb'],['人指','IndexFinger'],['人差指','IndexFinger'],['中指','MiddleFinger'],['薬指','RingFinger'],['小指','LittleFinger'],['足','Leg'],['ひざ','Knee'],['つま','Toe'],['袖','Sleeve'],['新規','New'],['ボーン','Bone'],['捩','Twist'],['回転','Rotation'],['軸','Axis'],['ﾈｸﾀｲ','Necktie'],['ネクタイ','Necktie'],['ヘッドセット','Headset'],['飾り','Accessory'],['リボン','Ribbon'],['襟','Collar'],['紐','String'],['コード','Cord'],['イヤリング','Earring'],['メガネ','Eyeglasses'],['眼鏡','Glasses'],['帽子','Hat'],['ｽｶｰﾄ','Skirt'],['スカート','Skirt'],['パンツ','Pantsu'],['シャツ','Shirt'],['フリル','Frill'],['マフラー','Muffler'],['ﾏﾌﾗｰ','Muffler'],['服','Clothes'],['ブーツ','Boots'],['ねこみみ','CatEars'],['ジップ','Zip'],['ｼﾞｯﾌﾟ','Zip'],['ダミー','Dummy'],['ﾀﾞﾐｰ','Dummy'],['基','Category'],['あほ毛','Antenna'],['アホ毛','Antenna'],['モミアゲ','Sideburn'],['もみあげ','Sideburn'],['ツインテ','Twintail'],['おさげ','Pigtail'],['ひらひら','Flutter'],['調整','Adjustment'],['補助','Aux'],['右','Right'],['左','Left'],['前','Front'],['後ろ','Behind'],['後','Back'],['横','Side'],['中','Middle'],['上','Upper'],['下','Lower'],['親','Parent'],['先','Tip'],['パーツ','Part'],['光','Light'],['戻','Return'],['羽','Wing'],['根','Base'],['毛','Strand'],['尾','Tail'],['尻','Butt'],['０','0'],['１','1'],['２','2'],['３','3'],['４','4'],['５','5'],['６','6'],['７','7'],['８','8'],['９','9'],['ａ','a'],['ｂ','b'],['ｃ','c'],['ｄ','d'],['ｅ','e'],['ｆ','f'],['ｇ','g'],['ｈ','h'],['ｉ','i'],['ｊ','j'],['ｋ','k'],['ｌ','l'],['ｍ','m'],['ｎ','n'],['ｏ','o'],['ｐ','p'],['ｑ','q'],['ｒ','r'],['ｓ','s'],['ｔ','t'],['ｕ','u'],['ｖ','v'],['ｗ','w'],['ｘ','x'],['ｙ','y'],['ｚ','z'],['Ａ','A'],['Ｂ','B'],['Ｃ','C'],['Ｄ','D'],['Ｅ','E'],['Ｆ','F'],['Ｇ','G'],['Ｈ','H'],['Ｉ','I'],['Ｊ','J'],['Ｋ','K'],['Ｌ','L'],['Ｍ','M'],['Ｎ','N'],['Ｏ','O'],['Ｐ','P'],['Ｑ','Q'],['Ｒ','R'],['Ｓ','S'],['Ｔ','T'],['Ｕ','U'],['Ｖ','V'],['Ｗ','W'],['Ｘ','X'],['Ｙ','Y'],['Ｚ','Z'],['＋','+'],['－','-'],['＿','_'],['／','/'],['.','_']];
+	this.VMDdecoder = function() {
+		this.parsed = {};
+		this.Translate = function(u8arr) {
+			var resu = Encoding.convert(u8arr.slice(0,14), {from:'SJIS',type:'string'}).replaceAll("\x00","");
+			for (var i=0; i<self.Japaneasetuples.length; i++) {
+				resu = resu.replaceAll(self.Japaneasetuples[i][0],self.Japaneasetuples[i][1]);
+			}
+			for (var i=0; i<self.Japaneasetranslate.length; i++) {
+				resu = resu.replaceAll(self.Japaneasetranslate[i][0],self.Japaneasetranslate[i][1]);
+			}
+			return resu;
+		}
+		this.parse = function(data) {
+			var idx = 0;
+			var isNew = null;
+			var KeyFrameCount = 1;
+			var CurrentFrame = 0;
+			var SpareData = null;
+			var Part = 0;
+			var result = [];
+			var Bones = [];
+			var BlendShapes = [];
+			var NextKeyFrames = [];
+			var header = Array.from(data.slice(0,30)).map(function(x){return String.fromCharCode(x)}).join("");
+            isNew = header.includes('Vocaloid Motion Data 0002');
+            if (isNew) {
+                console.log("Vmd File Header:\n"+header+"\nIt is the new version of Vmd file.");
+                data = data.slice(50);
+            } else {
+                console.log("Vmd File Header:\n"+header+"\nIt is the old version of Vmd file.");
+                data = data.slice(40);
+            }
+			var d = data;
+			KeyFrameCount = new Uint32Array(d.slice(0,4).buffer)[0];
+			// KeyFrameCount = 100;
+			console.log("KeyFrameCount: "+KeyFrameCount);
+			d = d.slice(4);
+			while (d.length >= 111 && Part == 0) {
+				//utf16le
+				var name = this.Translate(d.slice(0,15));
+				var Frame = new Uint32Array(d.slice(15,19).buffer)[0];
+				var P = new Float32Array(d.slice(19,31).buffer);
+				var Q = new Float32Array(d.slice(31,47).buffer);
+				if (!Bones.includes(name)) {
+					Bones.push(name);
+				}
+				if (!result[Frame]) {
+					result[Frame] = {Bones:{},BlendShapes:{},Camera:{}};
+				}
+				result[Frame].Bones[name] = {Position:P,Rotation:Q};
+				CurrentFrame++;
+				d = d.slice(111,Infinity);
+				if (CurrentFrame >= KeyFrameCount) {
+					CurrentFrame = 0;
+					KeyFrameCount = new Uint32Array(d.slice(0,4).buffer)[0];
+					console.log("KeyFrameCount: "+KeyFrameCount);
+					d = d.slice(4,Infinity);
+					Part = 1;
+					break;
+				}
+			}
+			while (d.length >= 23 && Part == 1) {
+				var name = this.Translate(d.slice(0,15));
+				var Frame = new Uint32Array(d.slice(15,19).buffer)[0];
+				var Value = new Float32Array(d.slice(19,23).buffer)[0];
+				if (!BlendShapes.includes(name)) {
+					BlendShapes.push(name);
+				}
+				if (!result[Frame]) {
+					result[Frame] = {Bones:{},BlendShapes:{},Camera:{}};
+				}
+				result[Frame].BlendShapes[name] = Value;
+				CurrentFrame++;
+				d = d.slice(23);
+				if (CurrentFrame >= KeyFrameCount) {
+					CurrentFrame = 0;
+					KeyFrameCount = new Uint32Array(d.slice(0,4).buffer)[0];
+					d = d.slice(4);
+					Part = 2;
+				}
+			}
+			while (d.length >= 61 && Part == 2) {
+				var Frame = new Uint32Array(d.slice(0,4).buffer)[0];
+				var D = new Float32Array(d.slice(4,8).buffer)[0];
+				var P = new Float32Array(d.slice(8,20).buffer);
+				var R = new Float32Array(d.slice(20,32).buffer);
+				var Fov = new Uint32Array(d.slice(56,60).buffer)[0];
+				if (!result[Frame]) {
+					result[Frame] = {Bones:{},BlendShapes:{},Camera:{}};
+				}
+				result[Frame].Camera = {Position:P,Rotation:R,Distance:D,Fov:Fov};
+				//console.log(P,Q);
+				CurrentFrame++;
+				d = d.slice(61);
+				if (CurrentFrame >= KeyFrameCount) {
+					console.log("Done");
+					Part = 3;
+				}
+			}
+			this.parsed = result;
+		}
+	}
+	this.AssetFileImporter = function() {
+		this.Assets = [];
+		this.ImportFile = function(file,returnFunction) {
+			if (file.name.endsWith(".fbx")) {
+				var reader = new FileReader();
+				reader.onload = function(e) {
+					var data = new Uint8Array(e.target.result);
+					
+				}
+				reader.readAsArrayBuffer(file);
+			} else if (file.name.endsWith(".obj")) {
+				var reader = new FileReader();
+				reader.onload = function(e) {
+					var data = new Uint8Array(e.target.result);
+					var decoder = new Engine.OBJdecoder();
+					decoder.parse(data);
+					decoder.decodeData();
+				}
+				reader.readAsArrayBuffer(file);
+			} else if (file.name.endsWith(".obj")) {
+				var reader = new FileReader();
+				reader.onload = function(e) {
+					var data = new Uint8Array(e.target.result);
+					var blob = new Blob([data]);
+					var Img = new Image();
+					Img.src = URL.createObjectURL(blob);
+					Img.onload = function() {
+						returnFunction(new Engine.Texture(Img));
+					}
+				}
+				reader.readAsArrayBuffer(file);
+			}
+		}
+	}
     this.DefaultVertexShader = new self.VertexShader(`#version 300 es
     in highp ivec3 aVertexDataIndexs;
     uniform highp sampler2D uVertexPoitions;
 	uniform highp sampler2D uVertexNormals;
 	uniform highp sampler2D uVertexUVs;
 	
-	uniform highp vec4 LightPositions[24];
 	uniform highp mat3x4 uViewMatrix;
 	uniform highp vec3 uCamreaPosition;
     uniform highp vec4 uOptions;
@@ -1007,7 +1272,6 @@ var KhawnEngine = function() {
 	out highp vec3 PositionToCamera;
 	out highp vec3 CameraSpacePosition;
 	out highp vec3 Normal;
-	out highp vec3 Lighting[24];
 	out highp float depth;
 	out highp vec2 UV;
 	
@@ -1036,9 +1300,6 @@ var KhawnEngine = function() {
         point = WorldPointToCamera(point);
 		UV = getVertexUV(aVertexDataIndexs[2]);
 		CameraSpacePosition = point;
-		for (lowp int i = 0; i<24; i++) {
-			Lighting[i] = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
-		}
 		PositionToCamera = uCamreaPosition-WorldPosition;
         point.z *= uOptions.z;
         gl_Position = vec4(point.xy*uOptions.xy,point.z-uOptions.w,point.z);
@@ -1056,15 +1317,13 @@ var KhawnEngine = function() {
         }
     `),[]);
     this.DefaultShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
-		//const highp vec3[32] fibSphere = vec3[32](vec3(0.031244913985325456,0.9995117584851364,0), vec3(-0.06902711460497782,0.9956086864580017,-0.06323449136890183), vec3(0.01360475352005285,0.9878177838164719,0.15501914932540625), vec3(0.13203706234294763,0.9761694738686353,-0.17221896659449656), vec3(-0.2733138762864924,0.9607092430155619,0.048345376342705804), vec3(0.2843624676955665,0.9414974631278811,0.18088812534230145), vec3(-0.10258714008697663,0.9186091557949183,-0.381619047714501), vec3(-0.20822464477561198,0.8921336993669944,0.4009238827531124), vec3(0.47587092846877455,0.8621744799348805,-0.17378729984462243), vec3(-0.5171465026470083,0.8288484876093257,-0.21347055859696712), vec3(0.25860966654675344,0.7922858596771786,0.5526338362099908), vec3(0.1970617845273161,0.7526293724180665,-0.6282640216123291), vec3(-0.6092536244544949,0.7100338835660797,0.35307492870088086), vec3(0.729714381293522,0.6646657275936333,0.16042565971763537), vec3(-0.45273995840074277,0.616702066178912,-0.6439760023773825), vec3(-0.10591574044156206,0.5663301963933087,0.8173444589521801), vec3(0.6560243682662659,0.513746819310368,-0.5528980320903004), vec3(-0.8875963892329678,0.4591572718923041,-0.03670489734374177), vec3(0.6487909552905997,0.40277472515355744,0.6456336554971304), vec3(-0.04335848139849126,0.34481935173254513,-0.9376671353745762), vec3(-0.6140386694301405,0.28551746612221973,0.7358235447331173), vec3(0.965634129539049,0.22510064091681745,-0.12992470638104622), vec3(-0.8097708151965409,0.16380480252583335,-0.563417441623351), vec3(0.21833958115130006,0.10186930988644112,0.9705413288500058), vec3(0.49679215207087946,0.03953601977196579,-0.8669685465928824), vec3(-0.9524418150634785,-0.022951657653640416,0.303854916579503), vec3(0.9044786547209538,-0.08534970934727917,0.4178920796910473), vec3(-0.381843290279563,-0.14741447225241752,-0.9123950213800043), vec3(-0.33098475008542244,-0.2089035847981091,0.9202219229454325), vec3(0.8524187117375177,-0.26957693331574223,-0.4480073848764446), vec3(-0.9130721208414772,-0.3291975896777772,-0.24068288076302585), vec3(0.4985744828636296,-0.38753273649701414,0.7753978741139288));
-		const highp vec3[16] fibSphere = vec3[16](vec3(0.06245931784238083,0.9980475107000991,0), vec3(-0.1374479898036949,0.9824733131012553,-0.12591361778126356), vec3(0.026878034943095843,0.9515679480481722,0.3062613450714744), vec3(0.25778109935695087,0.9058136834259364,-0.3362297960214997), vec3(-0.5251503343856905,0.8459244992310679,0.09289169981900676), vec3(0.5354530838883197,0.7728349461524715,0.34061142223946994), vec3(-0.18847497230142526,0.6876855622205048,-0.7011175025125569), vec3(-0.3715284452860901,0.5918050750924775,0.7153554133702267), vec3(0.8205675405373889,0.4866896677019633,-0.29966994972564903), vec3(-0.8572721931828501,0.37397963082453317,-0.3538694992844283), vec3(0.4097855639616461,0.2554337668888117,0.8756879480166595), vec3(0.2966289744327563,0.13290194445282522,-0.9456999125978756), vec3(-0.8651814340962697,0.008296231623858378,0.5013903256306063), vec3(0.9700322803559933,-0.11643894112485227,0.21325887568182147), vec3(-0.5584113355749855,-0.2393571231413216,-0.7942826624715356), vec3(-0.1199665641708251,-0.3585402173062328,0.9257736959187416));
+		highp vec3[24] fibSphere = vec3[24](vec3(0.08330922277203934,1.9982641400478363,0), vec3(-0.18386253656195853,1.984395334458658,-0.16843314468272927), vec3(0.03616444827285966,1.9567539787075074,0.4120752352343671), vec3(0.3499118507917456,1.9155319155950687,-0.45639804667875356), vec3(-0.721346997383237,1.8610152438246286,0.12759612697314385), vec3(0.7466459289412188,1.7935823323550246,0.4749550229857708), vec3(-0.26768567859714737,1.7137011943586609,-0.9957773817112359), vec3(-0.5393508864777872,1.6219262390104359,1.038487311653391), vec3(1.222186501017631,1.5188944236515596,-0.4463405499509058), vec3(-1.3153906106679338,1.40532083303388,-0.542974122410637), vec3(0.6506404788955875,1.2819937163266504,1.3903809113050654), vec3(0.48976880487264574,1.1497690163310286,-1.5614601265670538), vec3(-1.493781494289108,1.0095644288718937,0.8656769092888913), vec3(1.7624458009727377,0.8623530335973324,0.38746876529475605), vec3(-1.0755223265031053,0.7091565403907663,-1.5298198346257468), vec3(-0.2470735207029002,0.5510381982685012,1.906649306877507), vec3(1.5000777814051125,0.38909541597797437,-1.2642671422605438), vec3(-1.9856682975967084,0.22445214551289128,-0.08211361820094092), vec3(1.417057403081286,0.05825108140691417,1.410161383632188), vec3(-0.09224721287263171,-0.10835427005387264,-1.9949310273486458), vec3(-1.2693174548472759,-0.2742075966566752,1.5210665313377336), vec3(1.93398701596605,-0.438157805562027,-0.26021521765608185), vec3(-1.5663385360298747,-0.5990670123791483,-1.0898175559362722), vec3(0.4064104272907257,-0.7558184385690411,1.8065350958418789));
         layout(location = 0) out highp vec4 color;
 		layout(location = 1) out highp vec4 position;
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
-		uniform samplerCube uReflectionCubemap;
-		uniform highp vec3 uReflectionPosition;
-        in highp vec3 Lighting[24];
+		uniform samplerCube uReflectionCubemap[4];
+		uniform highp vec3 uReflectionPosition[4];
 		uniform highp vec3 LightColors[24];
 		uniform highp vec4 LightPositions[24];
 		uniform highp float Reflectivity;
@@ -1075,61 +1334,196 @@ var KhawnEngine = function() {
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
 		in highp vec2 UV;
+		const highp float Infinity = 1.0/0.0;
 		highp vec3 fastNormalize(highp vec3 vect) {
 			vect = mix(vect,vect/dot(vect,vect),0.8);
 			vect = mix(vect,vect/dot(vect,vect),0.7);
 			vect = mix(vect,vect/dot(vect,vect),0.5);
 			return vect;
 		}
-		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir, highp float lvl) {
-			pos = (uReflectionPosition-pos)+(dir*0.9);
+		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir, highp vec4 lvl) {
 			highp vec3 p = pos;
-			highp float d = 0.0;
-			highp float l = length(p);
-			highp vec4 h = textureLod(uReflectionCubemap,p,0.0);
-			for (lowp int i=0; i<24; i++) {
-				d += (h.w-l);
-				p = pos+(dir*d);
-				l = length(p);
-				h = textureLod(uReflectionCubemap,p,0.0);
+			highp vec3 v;
+			bool hit;
+			highp float dist = Infinity;
+			for (highp float i=0.02; i<1.0; i+=0.02) {
+				p = pos-(dir*i/(1.0-i));
+				v = abs(uReflectionPosition[0]-p);
+				hit = texture(uReflectionCubemap[0],uReflectionPosition[0]-p).w < max(v.x,max(v.y,v.z));
+				if (hit) {
+					v = abs(uReflectionPosition[1]-p);
+					hit = texture(uReflectionCubemap[1],uReflectionPosition[1]-p).w < max(v.x,max(v.y,v.z));
+					if (hit) {
+						v = abs(uReflectionPosition[2]-p);
+						hit = texture(uReflectionCubemap[2],uReflectionPosition[2]-p).w < max(v.x,max(v.y,v.z));
+						if (hit) {
+							v = abs(uReflectionPosition[3]-p);
+							hit = texture(uReflectionCubemap[3],uReflectionPosition[3]-p).w < max(v.x,max(v.y,v.z));
+							if (hit) {
+								dist = i/(1.0-i);
+								break;
+							}
+						}
+					}
+				}
 			}
-			return textureLod(uReflectionCubemap,p,lvl).rgb;
+			if (hit) {
+				for (lowp int i=0; i<8; i++) {
+					v = abs(uReflectionPosition[0]-p);
+					dist = texture(uReflectionCubemap[0],uReflectionPosition[0]-p).w-max(v.x,max(v.y,v.z));
+					v = abs(uReflectionPosition[1]-p);
+					dist = max(texture(uReflectionCubemap[1],uReflectionPosition[1]-p).w-max(v.x,max(v.y,v.z)),dist);
+					v = abs(uReflectionPosition[2]-p);
+					dist = max(texture(uReflectionCubemap[2],uReflectionPosition[2]-p).w-max(v.x,max(v.y,v.z)),dist);
+					v = abs(uReflectionPosition[3]-p);
+					dist = max(texture(uReflectionCubemap[3],uReflectionPosition[3]-p).w-max(v.x,max(v.y,v.z)),dist);
+					p -= dir*min(dist,0.0);
+				}
+			}
+			highp float count = 0.0;
+			highp float s0 = texture(uReflectionCubemap[0],uReflectionPosition[0]-p).w+0.2;
+			highp float s1 = texture(uReflectionCubemap[1],uReflectionPosition[1]-p).w+0.2;
+			highp float s2 = texture(uReflectionCubemap[2],uReflectionPosition[2]-p).w+0.2;
+			highp float s3 = texture(uReflectionCubemap[3],uReflectionPosition[3]-p).w+0.2;
+			highp vec3 result;
+			v = abs(uReflectionPosition[0]-p);
+			if (s0 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[0],uReflectionPosition[0]-p,lvl[0]).rgb;
+				count++;
+			}
+			v = abs(uReflectionPosition[1]-p);
+			if (s1 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[1],uReflectionPosition[1]-p,lvl[1]).rgb;
+				count++;
+			}
+			v = abs(uReflectionPosition[2]-p);
+			if (s2 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[2],uReflectionPosition[2]-p,lvl[2]).rgb;
+				count++;
+			}
+			v = abs(uReflectionPosition[3]-p);
+			if (s3 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[3],uReflectionPosition[3]-p,lvl[3]).rgb;
+				count++;
+			}
+			if (count == 0.0) {
+				return vec3(0);
+			} else {
+				return result/count;
+			}
 		}
 		highp float FresnelReflectionCoefficient(highp vec3 dir, highp vec3 norml, highp float ior) {
-			highp float cosi = dot(dir,norml);
-			highp float cost = -clamp(dot(refract(dir,norml,1.0/ior),norml),-1.0,1.0)*ior;
-			return clamp((cost-cosi)/(cosi+cost),0.0,1.0);
+			highp float cosi = max(dot(dir,norml),0.0)*ior;
+			highp float cost = -dot(refract(dir,norml,1.0/ior),norml);
+			return clamp((cost-cosi)/(cosi+cost),0.04,1.0);
 		}
         void main(void) {
-			position.xyz = WorldPosition;
+			position = vec4(WorldPosition,CameraSpacePosition.z);
 			highp vec3 normal = normalize(Normal);
 			highp vec3 ViewDir = normalize(PositionToCamera);
-			position.w = dot(PositionToCamera,ViewDir);
 			highp vec3 refl = reflect(ViewDir,normal);
 			highp float fresnel = FresnelReflectionCoefficient(ViewDir,normal,IOR);
 			highp vec3 DirectLight;
-			highp vec3 ReflectedLight;
-			
 			highp float reflection = mix(fresnel,1.0,Reflectivity);
-			highp float k = min(2500.0,1.0/(Roughness*Roughness));
-			highp float m = (1.0+k)/2.0;
+			highp vec3 position = WorldPosition+(normal*0.0125);
 			for (lowp int i = 0; i<24; i++) {
-				highp float div = (dot(Lighting[i],Lighting[i])+LightPositions[i].w);
+				highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+				highp float div = (dot(lig,lig)+LightPositions[i].w);
 				if (div == 0.0) {
 					break;
 				}
-				highp vec3 LigNorm = normalize(Lighting[i]);
-				DirectLight += LightColors[i]*max(dot(LigNorm,normal)/div,0.0);
-				ReflectedLight += LightColors[i]*m*pow(max(-dot(LigNorm,refl),0.0),k)/div;
+				DirectLight += LightColors[i]*max(dot(normalize(lig),normal)/div,0.0);
 			}
-			highp float lodm = log2(float(textureSize(uReflectionCubemap,0)));
-			highp float lod = lodm*log2(Roughness+1.0);
-			ReflectedLight += RayMarch(WorldPosition,refl,lod);
-			//ReflectedLight = pow(ReflectedLight,vec3(0.45));
-			//DirectLight = pow(DirectLight,vec3(0.45));
+			highp vec4 lodm = vec4(log2(float(textureSize(uReflectionCubemap[0],0))),log2(float(textureSize(uReflectionCubemap[1],0))),log2(float(textureSize(uReflectionCubemap[2],0))),log2(float(textureSize(uReflectionCubemap[3],0))));
+			highp vec4 lod = lodm*log2(Roughness+1.0);
+			highp vec3 ReflectedLight = RayMarch(position,refl,lod);
 			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,ReflectedLight,reflection),1);
+			// color = vec4(vec3(fresnel),1.0);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'},{Name:'Reflectivity',Type:'float'},{Name:'Roughness',Type:'float'},{Name:'IOR',Type:'float'}]);
+	this.DiffuseShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
+        layout(location = 0) out highp vec4 color;
+		layout(location = 1) out highp vec4 position;
+        uniform highp vec3 uColor;
+		uniform sampler2D uTexture;
+		uniform highp vec3 LightColors[24];
+		uniform highp vec4 LightPositions[24];
+		in highp vec3 CameraSpacePosition;
+		in highp vec3 WorldPosition;
+		in highp vec3 Normal;
+		in highp vec2 UV;
+		highp vec3 fastNormalize(highp vec3 vect) {
+			vect = mix(vect,vect/dot(vect,vect),0.8);
+			vect = mix(vect,vect/dot(vect,vect),0.7);
+			vect = mix(vect,vect/dot(vect,vect),0.5);
+			return vect;
+		}
+        void main(void) {
+			position = vec4(WorldPosition,CameraSpacePosition.z);
+			highp vec3 normal = normalize(Normal);
+			highp vec3 DirectLight;
+			for (lowp int i = 0; i<24; i++) {
+				highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+				highp float div = (dot(lig,lig)+LightPositions[i].w);
+				if (div == 0.0) {
+					break;
+				}
+				DirectLight += LightColors[i]*max(dot(normalize(lig),normal)/div,0.0);
+			}
+			color = vec4(uColor*texture(uTexture,UV).rgb*DirectLight,1);
+        }
+    `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
+	this.ToonShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
+        layout(location = 0) out highp vec4 color;
+		layout(location = 1) out highp vec4 position;
+        uniform highp vec3 uColor;
+		uniform sampler2D uTexture;
+		uniform highp vec3 LightColors[8];
+		uniform highp vec4 LightPositions[8];
+		in highp vec3 CameraSpacePosition;
+		in highp vec3 WorldPosition;
+		in highp vec3 Normal;
+		in highp vec2 UV;
+		highp vec3 fastNormalize(highp vec3 vect) {
+			vect = mix(vect,vect/dot(vect,vect),0.8);
+			vect = mix(vect,vect/dot(vect,vect),0.7);
+			vect = mix(vect,vect/dot(vect,vect),0.5);
+			return vect;
+		}
+        void main(void) {
+			position = vec4(WorldPosition,CameraSpacePosition.z);
+			highp vec3 normal = normalize(Normal);
+			highp vec3 DirectLight;
+			for (lowp int i = 0; i<24; i++) {
+				highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+				highp float div = (dot(lig,lig)+LightPositions[i].w);
+				if (div == 0.0) {
+					break;
+				}
+				DirectLight += LightColors[i]*max(sign(dot(lig,normal)),0.1)/div;
+			}
+			color = vec4(uColor*texture(uTexture,UV).rgb*DirectLight,1);
+        }
+    `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
+	this.UnlitShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
+        layout(location = 0) out highp vec4 color;
+		layout(location = 1) out highp vec4 position;
+        uniform highp vec3 uColor;
+		uniform sampler2D uTexture;
+		in highp vec3 CameraSpacePosition;
+		in highp vec3 WorldPosition;
+		in highp vec2 UV;
+		highp vec3 fastNormalize(highp vec3 vect) {
+			vect = mix(vect,vect/dot(vect,vect),0.8);
+			vect = mix(vect,vect/dot(vect,vect),0.7);
+			vect = mix(vect,vect/dot(vect,vect),0.5);
+			return vect;
+		}
+        void main(void) {
+			position = vec4(WorldPosition,CameraSpacePosition.z);
+			color = vec4(uColor*texture(uTexture,UV).rgb,1);
+        }
+    `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
 	//,{Name:'uCubemap',Type:'samplerCube',Value:8}
 	this.DefaultTexture = new this.Texture((function(){
 		var cvs = document.createElement("canvas");
@@ -1141,7 +1535,9 @@ var KhawnEngine = function() {
         return cvs;
 	})());
 	this.CubemapTest = null;
-    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:1,IOR:1.1});
+    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:0,IOR:1.3});
+	//this.DefaultMaterial = new this.Material(this.DiffuseShader,{uColor:[1,1,1],uTexture:this.DefaultTexture});
+	this.DiffuseMaterial = new this.Material(this.DiffuseShader,{uColor:[1,1,1],uTexture:this.DefaultTexture});
 	this.XaxisMaterial = new this.Material(this.DefaultShader,{uColor:[1,0,0]});
 	this.YaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,1,0]});
 	this.ZaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,0,1]});
@@ -1152,13 +1548,17 @@ var KhawnEngine = function() {
     this.DefaultPlaneMesh = new this.Mesh({VertexPositions:[[1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1]],VertexNormals:[[0,1,0]],VertexUVs:[[1,1],[0,1],[1,0],[0,0]],VertexDataIndexs:[[0,0,0],[1,0,1],[2,0,2],[3,0,3]],Indices:[[[0,2,1],[3,1,2]]]});
 	this.DefaultCubeMesh = new this.Mesh({VertexPositions:[[0.5,0.5,0.5],[-0.5,0.5,0.5],[0.5,-0.5,0.5],[-0.5,-0.5,0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5],[0.5,-0.5,-0.5],[-0.5,-0.5,-0.5]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
 	this.DefaultFlipedCubeMesh = new this.Mesh({VertexPositions:[[0.5,0.5,0.5],[-0.5,0.5,0.5],[0.5,-0.5,0.5],[-0.5,-0.5,0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5],[0.5,-0.5,-0.5],[-0.5,-0.5,-0.5]],VertexNormals:[[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,2,1],[3,1,2],[4,5,6],[7,6,5],[8,9,10],[11,10,9],[12,14,13],[15,13,14],[16,18,17],[19,17,18],[20,21,22],[23,22,21]]]});
+	this.DefaultCubeRoomMesh = new this.Mesh({VertexPositions:[[0.5,0.5,0.5],[-0.5,0.5,0.5],[0.5,-0.5,0.5],[-0.5,-0.5,0.5],[0.5,0.5,-0.5],[-0.5,0.5,-0.5],[0.5,-0.5,-0.5],[-0.5,-0.5,-0.5]],VertexNormals:[[-1,0,0],[1,0,0],[0,-1,0],[0,1,0],[0,0,-1],[0,0,1]],VertexUVs:[[0,0],[1.5,0],[0,1.5],[1.5,1.5]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,3],[3,3,2],[6,3,1],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,2,1],[3,1,2],[4,5,6],[7,6,5],[8,9,10],[11,10,9],[16,18,17],[19,17,18],[20,21,22],[23,22,21]],[[12,14,13],[15,13,14]]]});
 	this.DefaultUVSphereMesh = new this.Mesh((function(){
-		var MeshData = {VertexPositions:[],VertexNormals:[],VertexDataIndexs:[],Indices:[[]]};
-		var s = 16;
-		var r = 24;
+		var MeshData = {VertexPositions:[],VertexNormals:[],VertexUVs:[],VertexDataIndexs:[],Indices:[[]]};
+		var s = 32;
+		var r = 48;
 		MeshData.VertexPositions.push([0,0.5,0]);
 		MeshData.VertexNormals.push([0,1,0]);
-		MeshData.VertexDataIndexs.push([MeshData.VertexDataIndexs.length,MeshData.VertexDataIndexs.length,0]);
+		for (var x=0; x<s; x++) {
+			MeshData.VertexDataIndexs.push([MeshData.VertexPositions.length,MeshData.VertexNormals.length,MeshData.VertexUVs.length]);
+			MeshData.VertexUVs.push([x/s,1]);
+		}
 		for (var y=1; y<r; y++) {
 			var theta0 = Math.PI*y/r;
 			var m0 = Math.cos(theta0);
@@ -1169,25 +1569,27 @@ var KhawnEngine = function() {
 				MeshData.VertexPositions.push([xyz[0]/2,xyz[1]/2,xyz[2]/2]);
 				MeshData.VertexNormals.push(xyz);
 				var idx = MeshData.VertexDataIndexs.length;
-				MeshData.VertexDataIndexs.push([idx,idx,0]);
+				MeshData.VertexDataIndexs.push([MeshData.VertexPositions.length,MeshData.VertexNormals.length,MeshData.VertexUVs.length]);
 				MeshData.Indices[0].push([Math.max(idx-s,0),idx+1,idx]);
+				MeshData.VertexUVs.push([x/s,1-(y/r)]);
 				if (y > 1) {
-					MeshData.Indices[0].push([Math.max(idx-s,0),Math.max(1+idx-s,0),idx+1]);
+					MeshData.Indices[0].push([Math.max(idx-s,0),idx,Math.max((idx-s)-1,0)]);
 				}
 			}
 		}
-		var idx = MeshData.VertexDataIndexs.length;
-		for (var x=1; x<s; x++) {
-			MeshData.Indices[0].push([idx,idx-x-1,idx-x]);
-		}
 		MeshData.VertexPositions.push([0,-0.5,0]);
 		MeshData.VertexNormals.push([0,-1,0]);
-		MeshData.VertexDataIndexs.push([idx,idx,0]);
+		var idx = MeshData.VertexDataIndexs.length;
+		for (var x=0; x<s; x++) {
+			MeshData.VertexDataIndexs.push([MeshData.VertexPositions.length-1,MeshData.VertexNormals.length-1,MeshData.VertexUVs.length]);
+			MeshData.VertexUVs.push([x/s,0]);
+			MeshData.Indices[0].push([MeshData.VertexDataIndexs.length-1,idx-(s+x+1),idx-(s+x)]);
+		}
 		return MeshData;
 	})());
 	this.DefaultSphereMesh = new this.Mesh((function(){
 		var MeshData = {VertexPositions:[],VertexNormals:[],VertexDataIndexs:[],Indices:[[]]};
-		var len = 50;
+		var len = 24;
 		for (var i=0; i<len; i++) {
 			var theta = self.ThetaM*i;
 			var h = Math.cos(2*(i+0.5)/len);
@@ -1265,55 +1667,63 @@ var KhawnEngine = function() {
 	this.Components.PointLight = function(color) {
 		this.Enabled = true;
 		this.Color = color;
-		this.getData = function() {
-			var v = this.Parrent.getGlobalTransform().traslation;
-			return {Position:[v.value[0],v.value[1],v.value[2],1],Vector:v,Color:this.Color};
+		this.__proto__.getData = function() {
+			if (this.Enabled) {
+				var v = this.Parrent.getGlobalTransform().traslation;
+				return {Position:[v.value[0],v.value[1],v.value[2],1],Vector:v,Color:this.Color};
+			}
 		}
 	}
 	this.Components.DirectionalLight = function(color) {
 		this.Enabled = true;
 		this.Color = color;
-		this.getData = function() {
-			var v = this.Parrent.getGlobalTransform().matrix.value[1];
-			return {Position:[v[0],v[1],v[2],0],Vector:new self.Vector3(v),Color:this.Color};
+		this.__proto__.getData = function() {
+			if (this.Enabled) {
+				var v = this.Parrent.getGlobalTransform().matrix.value[1];
+				return {Position:[v[0],v[1],v[2],0],Vector:new self.Vector3(v),Color:this.Color};
+			}
 		}
 	}
     this.Components.MeshRenderer = function(mesh,materials) {
         this.Enabled = true;
         this.Mesh = mesh;
         this.Materials = materials;
-		this.LightColors = [];
-		this.LightPositions = [];
-		this.ReflectionProbe = null;
-		this.VertexPositionRenderBuffer = self.gl.createFramebuffer();
-		this.VertexPositionRenderTexture = self.gl.createTexture();
-		self.gl.bindTexture(self.gl.TEXTURE_2D, this.VertexPositionRenderTexture);
+		this.__proto__.LightColors = [];
+		this.__proto__.LightPositions = [];
+		this.__proto__.ReflectionProbe = null;
+		var VertexPositionRenderBuffer = self.gl.createFramebuffer();
+		var VertexPositionRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexPositionRenderTexture);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, mesh.VertexPositions.width, mesh.VertexPositions.height, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexPositionRenderBuffer);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.VertexPositionRenderTexture,0);
-		this.VertexNormalRenderBuffer = self.gl.createFramebuffer();
-		this.VertexNormalRenderTexture = self.gl.createTexture();
-		self.gl.bindTexture(self.gl.TEXTURE_2D, this.VertexNormalRenderTexture);
+		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexPositionRenderBuffer);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexPositionRenderTexture,0);
+		var VertexNormalRenderBuffer = self.gl.createFramebuffer();
+		var VertexNormalRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexNormalRenderTexture);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, mesh.VertexNormalDirections.width, mesh.VertexNormalDirections.height, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexNormalRenderBuffer);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.VertexNormalRenderTexture,0);
+		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexNormalRenderBuffer);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexNormalRenderTexture,0);
+		this.__proto__.VertexPositionRenderBuffer = VertexPositionRenderBuffer;
+		this.__proto__.VertexPositionRenderTexture = VertexPositionRenderTexture;
+		this.__proto__.VertexNormalRenderBuffer = VertexNormalRenderBuffer;
+		this.__proto__.VertexNormalRenderTexture = VertexNormalRenderTexture;
 		this.Update = function() {
 			var LightColors = [];
 			var LightPositions = [];
-			var Lghts = [];
+			var Lghts = new Array(24).fill({D:Infinity,Pos:[0,0,0,0],Color:[0,0,0]});
 			var ModelTransform = this.Parrent.getGlobalTransform();
 			var max = Infinity;
 			for (var i=0; i<self.Lights.length; i++) {
 				var res = {D:self.Lights[i].Vector.Subtract(ModelTransform.traslation).LengthSquared(),Pos:self.Lights[i].Position,Color:self.Lights[i].Color};
-				if (res.Pos[3] === 1 && Lghts.length > 28) {
+				if (res.Pos[3] === 1 && Lghts.length > 24) {
 					for (var j=0; j<Lghts.length; j++) {
 						if (Lghts[j].D > res.D) {
 							Lghts.splice(j,0,res);
@@ -1329,19 +1739,18 @@ var KhawnEngine = function() {
 				LightColors.push(Lghts[i].Color);
 				LightPositions.push(Lghts[i].Pos);
 			}
-			this.LightColors = LightColors.flat();
-			this.LightPositions = LightPositions.flat();
+			this.__proto__.LightColors = LightColors.flat();
+			this.__proto__.LightPositions = LightPositions.flat();
 			
-			var Refl = {Cubemap:null,Position:{value:[0,0,0]}};
-			var dist = Infinity;
+			var Refl = [{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}}];
 			for (var i=0; i<self.ReflectionProbes.length; i++) {
-				var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared()
-				if (d < dist) {
-					dist = d;
-					Refl = self.ReflectionProbes[i];
+				var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
+				if (d < Refl[3].Distence) {
+					Refl.unshift(self.ReflectionProbes[i]);
+					Refl.pop();
 				}
 			}
-			this.ReflectionProbe = Refl;
+			this.__proto__.ReflectionProbe = Refl;
 
 			var ModelTransform = ModelTransform.ToMatrixTransposed3x4().value;
 			var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
@@ -1352,14 +1761,14 @@ var KhawnEngine = function() {
 			self.gl.activeTexture(self.gl.TEXTURE0);
 			self.gl.bindTexture(self.gl.TEXTURE_2D,this.Mesh.VertexPositions.texture);
 			self.gl.uniformMatrix3x4fv(self.MeshVertexMapingShader.Uniforms.uModelMatrix.Location,false,ModelTransform.flat());
-			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexPositionRenderBuffer);
+			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexPositionRenderBuffer);
 			self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
 			self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 
 			self.gl.uniform1i(self.MeshVertexMapingShader.notNormals,false);
 			self.gl.activeTexture(self.gl.TEXTURE0);
 			self.gl.bindTexture(self.gl.TEXTURE_2D,this.Mesh.VertexNormalDirections.texture);
-			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexNormalRenderBuffer);
+			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexNormalRenderBuffer);
 			self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 			self.gl.enable(self.gl.DEPTH_TEST);
 
@@ -1369,16 +1778,25 @@ var KhawnEngine = function() {
         this.render = function(CameraTransformInverse,CamreaViewPortComponent,CamPos) {
             if (this.Enabled) {
 				self.gl.activeTexture(self.gl.TEXTURE0);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.VertexPositionRenderTexture);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,VertexPositionRenderTexture);
 
 				self.gl.activeTexture(self.gl.TEXTURE1);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.VertexNormalRenderTexture);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,VertexNormalRenderTexture);
 
 				self.gl.activeTexture(self.gl.TEXTURE2);
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.Mesh.VertexUVPositions.texture);
 				
 				self.gl.activeTexture(self.gl.TEXTURE3);
-				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe.Cubemap);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[0].Cubemap);
+				
+				self.gl.activeTexture(self.gl.TEXTURE4);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[1].Cubemap);
+				
+				self.gl.activeTexture(self.gl.TEXTURE5);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[2].Cubemap);
+				
+				self.gl.activeTexture(self.gl.TEXTURE6);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[3].Cubemap);
 				
 				var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
                 for (var l=0; l<this.Mesh.IndexBuffers.length; l++) {
@@ -1387,14 +1805,14 @@ var KhawnEngine = function() {
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
-						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe.Position.value);
+						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].Position.value.concat(this.ReflectionProbe[1].Position.value).concat(this.ReflectionProbe[2].Position.value).concat(this.ReflectionProbe[3].Position.value));
 						//uReflectionPosition
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
                         var m = Math.max(VPdims[2],VPdims[3]);
                         self.gl.uniform4fv(this.Materials[l].shader.Options, [m/VPdims[2],m/VPdims[3],F,CamreaViewPortComponent.ClipDistance]);
                         var Ukeys = Object.keys(this.Materials[l].shader.Uniforms);
-                        var texIdx = 4;
+                        var texIdx = 7;
                         for (var i=0; i<Ukeys.length; i++) {
                             var U = this.Materials[l].shader.Uniforms[Ukeys[i]];
                             var value = this.Materials[l].Values[Ukeys[i]];
@@ -1423,7 +1841,7 @@ var KhawnEngine = function() {
 						
 						self.gl.uniform1i(this.Materials[l].shader.VertexUVs,2);
 						
-						self.gl.uniform1i(this.Materials[l].shader.ReflectionCubemap,3);
+						self.gl.uniform1iv(this.Materials[l].shader.ReflectionCubemap,[3,4,5,6]);
 						
                         self.gl.bindBuffer(self.gl.ARRAY_BUFFER, this.Mesh.VertexDataIndexs);
                         self.gl.vertexAttribIPointer(this.Materials[l].shader.VertexDataIndexs,3,self.gl.INT,0,0);
@@ -1436,44 +1854,85 @@ var KhawnEngine = function() {
             }
         }
     }
+	/*
+	this.SkinnedMeshBlendShapeVertexMapingShader = new this.VertexMapingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 VertexPosition;
+		
+		uniform highp sampler2D uVertexPositions;
+		uniform highp isampler2D uBlendShapeIndexs;
+		uniform highp sampler2D uBlendShapes;
+		uniform highp float uBlendShapeWeight;
+		
+		void main(void) {
+			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
+			highp vec3 Vertex = texelFetch(uVertexPositions,Pos,0).xyz;
+			highp int idx = texelFetch(uBlendShapeIndexs,Pos,0)[0];
+			if (idx >= 0) {
+				highp int Wid = textureSize(uBlendShapes,0)[0];
+				Vertex += texelFetch(uBlendShapes,ivec2(idx%Wid,idx/Wid),0).xyz*uBlendShapeWeight;
+				VertexPosition = vec4(Vertex,1);
+			} else {
+				VertexPosition = vec4(Vertex,1);
+			}
+		}
+	`),[{Name:'uVertexPositions',Type:'sampler2D',Value:0},{Name:'uBlendShapeIndexs',Type:'isampler2D',Value:1},{Name:'uBlendShapes',Type:'sampler2D',Value:2}]);
+	*/
 	this.SkinnedMeshRendererTransformTextures = [];
     this.Components.SkinnedMeshRenderer = function(SkinnedMesh,materials) {
         this.Enabled = true;
         this.SkinnedMesh = SkinnedMesh;
-        this.InversePoseTransforms = [];
-        this.DefaultPose = SkinnedMesh.DefaultPose;
+        this.__proto__.InversePoseTransforms = [];
+        this.__proto__.DefaultPose = SkinnedMesh.DefaultPose;
         for (var i=0; i<SkinnedMesh.DefaultPose.length; i++) {
             this.InversePoseTransforms.push(SkinnedMesh.DefaultPose[i].InverseTransform());
         }
         this.Materials = materials;
         this.BoneRefrences = new Array(Object.keys(SkinnedMesh.Bones).length);
-        this.SetBoneRefrence = function(BoneID,Obj) {
+        this.__proto__.SetBoneRefrence = function(BoneID,Obj) {
             this.BoneRefrences[BoneID] = Obj;
         }
-		this.LightColors = [];
-		this.LightPositions = [];
-		this.ReflectionProbe = null;
-		this.VertexPositionRenderBuffer = self.gl.createFramebuffer();
-		this.VertexPositionRenderTexture = self.gl.createTexture();
-		self.gl.bindTexture(self.gl.TEXTURE_2D, this.VertexPositionRenderTexture);
+		this.__proto__.LightColors = [];
+		this.__proto__.LightPositions = [];
+		this.__proto__.ReflectionProbe = null;
+		var VertexPositionRenderBuffer = self.gl.createFramebuffer();
+		var VertexPositionRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexPositionRenderTexture);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, SkinnedMesh.VertexPositions.width, SkinnedMesh.VertexPositions.height, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexPositionRenderBuffer);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.VertexPositionRenderTexture,0);
-		this.VertexNormalRenderBuffer = self.gl.createFramebuffer();
-		this.VertexNormalRenderTexture = self.gl.createTexture();
-		self.gl.bindTexture(self.gl.TEXTURE_2D, this.VertexNormalRenderTexture);
+		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexPositionRenderBuffer);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexPositionRenderTexture,0);
+		var VertexBlendShapePositionRenderBuffer = self.gl.createFramebuffer();
+		var VertexBlendShapePositionRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexBlendShapePositionRenderTexture);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, SkinnedMesh.VertexPositions.width, SkinnedMesh.VertexPositions.height, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexBlendShapePositionRenderBuffer);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexBlendShapePositionRenderTexture,0);
+		var VertexNormalRenderBuffer = self.gl.createFramebuffer();
+		var VertexNormalRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexNormalRenderTexture);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, SkinnedMesh.VertexNormalDirections.width, SkinnedMesh.VertexNormalDirections.height, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexNormalRenderBuffer);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.VertexNormalRenderTexture,0);
-		this.TransformTextureSize = self.calculateMostEfficientTextureSize(this.DefaultPose.length);
+		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexNormalRenderBuffer);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexNormalRenderTexture,0);
+		this.__proto__.VertexPositionRenderBuffer = VertexPositionRenderBuffer;
+		this.__proto__.VertexPositionRenderTexture = VertexPositionRenderTexture;
+		this.__proto__.VertexNormalRenderBuffer = VertexNormalRenderBuffer;
+		this.__proto__.VertexNormalRenderTexture = VertexNormalRenderTexture;
+		this.__proto__.TransformTextureSize = self.calculateMostEfficientTextureSize(this.DefaultPose.length);
+		this.BlendShapeValues = {};
+		for (var i=0; i<SkinnedMesh.BlendShapes.length; i++) {
+			this.BlendShapeValues[SkinnedMesh.BlendShapes[i].Name] = 0;
+		}
 		this.Update = function() {
 			if (this.Enabled) {
 				var LightColors = [];
@@ -1499,19 +1958,18 @@ var KhawnEngine = function() {
 					LightColors.push(Lghts[i].Color);
 					LightPositions.push(Lghts[i].Pos);
 				}
-				this.LightColors = LightColors.flat();
-				this.LightPositions = LightPositions.flat();
+				this.__proto__.LightColors = LightColors.flat();
+				this.__proto__.LightPositions = LightPositions.flat();
 				
-				var Refl = {Cubemap:null,Position:{value:[0,0,0]}};
-				var dist = Infinity;
+				var Refl = [{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}}];
 				for (var i=0; i<self.ReflectionProbes.length; i++) {
-					var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared()
-					if (d < dist) {
-						dist = d;
-						Refl = self.ReflectionProbes[i];
+					var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
+					if (d < Refl[3].Distence) {
+						Refl.unshift(self.ReflectionProbes[i]);
+						Refl.pop();
 					}
 				}
-				this.ReflectionProbe = Refl;
+				this.__proto__.ReflectionProbe = Refl;
 				
 				var ModelTransform = ModelTransform.ToMatrixTransposed3x4().value;
 				var TextureData = [new Float32Array(this.DefaultPose.length*4),new Float32Array(this.DefaultPose.length*4),new Float32Array(this.DefaultPose.length*4)];
@@ -1558,8 +2016,29 @@ var KhawnEngine = function() {
 				
 				var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
 				self.gl.viewport(0,0,65536,65536);
-				self.gl.useProgram(self.SkinnedMeshVertexMapingShader.program);
 				self.gl.disable(self.gl.DEPTH_TEST);
+
+				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexBlendShapePositionRenderBuffer);
+				self.gl.clearColor(0.0,0.0,0.0, 1.0);
+				self.gl.clear(self.gl.COLOR_BUFFER_BIT);
+				self.gl.useProgram(self.SkinnedMeshBlendShapeVertexMapingShader.program);
+				self.gl.enable(self.gl.BLEND);
+				self.gl.blendFunc(self.gl.SRC_ALPHA, self.gl.ONE);
+				for (var i=0; i<this.SkinnedMesh.BlendShapes.length; i++) {
+					var BlendShapeName = this.SkinnedMesh.BlendShapes[i].Name;
+					var BlendShapeValue = this.BlendShapeValues[BlendShapeName];
+					if (BlendShapeValue > 0) {
+						self.gl.activeTexture(self.gl.TEXTURE0);
+						self.gl.bindTexture(self.gl.TEXTURE_2D, this.SkinnedMesh.BlendShapes[i].Indexs.texture);
+						self.gl.activeTexture(self.gl.TEXTURE1);
+						self.gl.bindTexture(self.gl.TEXTURE_2D, this.SkinnedMesh.BlendShapes[i].BlendShapeNormals.texture);
+						self.gl.uniform1f(self.SkinnedMeshBlendShapeVertexMapingShader.BlendShapeWeight,BlendShapeValue);
+						self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					}
+				}
+				self.gl.disable(self.gl.BLEND);
+
+				self.gl.useProgram(self.SkinnedMeshVertexMapingShader.program);
 				self.gl.uniform1i(self.SkinnedMeshVertexMapingShader.notNormals,true);
 				self.gl.activeTexture(self.gl.TEXTURE0);
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.SkinnedMesh.VertexPositions.texture);
@@ -1573,7 +2052,9 @@ var KhawnEngine = function() {
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.SkinnedMesh.WeightIndexs.texture);
 				self.gl.activeTexture(self.gl.TEXTURE5);
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.SkinnedMesh.Weights.texture);
-				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexPositionRenderBuffer);
+				self.gl.activeTexture(self.gl.TEXTURE6);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,VertexBlendShapePositionRenderTexture);
+				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexPositionRenderBuffer);
 				self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
 				self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 
@@ -1581,7 +2062,7 @@ var KhawnEngine = function() {
 				self.gl.uniform1i(self.SkinnedMeshVertexMapingShader.notNormals,false);
 				self.gl.activeTexture(self.gl.TEXTURE0);
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.SkinnedMesh.VertexNormalDirections.texture);
-				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.VertexNormalRenderBuffer);
+				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexNormalRenderBuffer);
 				self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 				self.gl.enable(self.gl.DEPTH_TEST);
 				
@@ -1594,30 +2075,39 @@ var KhawnEngine = function() {
 				var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
 				
 				self.gl.activeTexture(self.gl.TEXTURE0);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.VertexPositionRenderTexture);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,VertexPositionRenderTexture);
 
 				self.gl.activeTexture(self.gl.TEXTURE1);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.VertexNormalRenderTexture);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,VertexNormalRenderTexture);
 
 				self.gl.activeTexture(self.gl.TEXTURE2);
 				self.gl.bindTexture(self.gl.TEXTURE_2D,this.SkinnedMesh.VertexUVPositions.texture);
 				
 				self.gl.activeTexture(self.gl.TEXTURE3);
-				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe.Cubemap);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[0].Cubemap);
 				
+				self.gl.activeTexture(self.gl.TEXTURE4);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[1].Cubemap);
+				
+				self.gl.activeTexture(self.gl.TEXTURE5);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[2].Cubemap);
+				
+				self.gl.activeTexture(self.gl.TEXTURE6);
+				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.ReflectionProbe[3].Cubemap);
+								
                 for (var l=0; l<this.SkinnedMesh.IndexBuffers.length; l++) {
                     if (this.Materials[l]) {
                         self.gl.useProgram(this.Materials[l].shader.program);
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
-						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe.Position.value);
+						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].Position.value.concat(this.ReflectionProbe[1].Position.value).concat(this.ReflectionProbe[2].Position.value).concat(this.ReflectionProbe[3].Position.value));
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
                         var m = Math.max(VPdims[2],VPdims[3]);
                         self.gl.uniform4fv(this.Materials[l].shader.Options, [m/VPdims[2],m/VPdims[3],F,CamreaViewPortComponent.ClipDistance]);
                         var Ukeys = Object.keys(this.Materials[l].shader.Uniforms);
-                        var texIdx = 4;
+                        var texIdx = 7;
                         for (var i=0; i<Ukeys.length; i++) {
                             var U = this.Materials[l].shader.Uniforms[Ukeys[i]];
                             var value = this.Materials[l].Values[Ukeys[i]];
@@ -1646,7 +2136,7 @@ var KhawnEngine = function() {
 						
 						self.gl.uniform1i(this.Materials[l].shader.VertexUVs,2);
 						
-						self.gl.uniform1i(this.Materials[l].shader.ReflectionCubemap,3);
+						self.gl.uniform1iv(this.Materials[l].shader.ReflectionCubemap,[3,4,5,6]);
 						
                         self.gl.bindBuffer(self.gl.ARRAY_BUFFER, this.SkinnedMesh.VertexDataIndexs);
                         self.gl.vertexAttribIPointer(this.Materials[l].shader.VertexDataIndexs,3,self.gl.INT,0,0);
@@ -1667,20 +2157,21 @@ var KhawnEngine = function() {
         this.ClipDistance = clipDistance || 0.2;
         this.FeildOfView = feildOfView || 100;
         this.isVR = isVR || false;
+		this.PostProcessing = true;
         this.IPD = IPD || 0.058;
 		this.Resolution = resolution;
         // this.IPD = IPD || 1;
-        this.canvas = canvas;
-        var thisComponent = this;
-		/*
-		this.FrameBuffer = self.gl.createFramebuffer();
-		this.DepthBuffer = self.gl.createRenderbuffer();
+        this.__proto__.canvas = canvas;
+		this.__proto__.PreviousMat = new self.Matrix3x3();
+        var dis = this;
+		this.__proto__.FrameBuffer = self.gl.createFramebuffer();
+		this.__proto__.DepthBuffer = self.gl.createRenderbuffer();
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
 		self.gl.bindRenderbuffer(self.gl.RENDERBUFFER, this.DepthBuffer);
 		self.gl.renderbufferStorage(self.gl.RENDERBUFFER, self.gl.DEPTH_COMPONENT24, this.Resolution[0], this.Resolution[1]);
 		self.gl.framebufferRenderbuffer(self.gl.FRAMEBUFFER, self.gl.DEPTH_ATTACHMENT, self.gl.RENDERBUFFER, this.DepthBuffer);
-		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1,self.gl.COLOR_ATTACHMENT2]);
-		this.ColorRenderTexture = self.gl.createTexture();
+		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1]);
+		this.__proto__.ColorRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.ColorRenderTexture);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
@@ -1688,7 +2179,7 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.ColorRenderTexture, 0);
-		this.PositionRenderTexture = self.gl.createTexture();
+		this.__proto__.PositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PositionRenderTexture);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
@@ -1696,83 +2187,77 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT1, self.gl.TEXTURE_2D, this.PositionRenderTexture, 0);
-		this.NormalRenderTexture = self.gl.createTexture();
-		self.gl.bindTexture(self.gl.TEXTURE_2D, this.NormalRenderTexture);
-		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
-		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
-		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
-		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
-		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT2, self.gl.TEXTURE_2D, this.NormalRenderTexture, 0);
-		*/
-        this.ctx = canvas.getContext("2d");
+        this.__proto__.ctx = canvas.getContext("2d");
         this.renderFrame = function() {
-            if (thisComponent.Enabled) {
+            if (dis.Enabled) {
 				var CameraTransformInverse;
-				if (self.canvas.width !== this.Resolution[0] || self.canvas.height !== this.Resolution[1]) {
+				if (self.canvas.width !== dis.Resolution[0] || self.canvas.height !== dis.Resolution[1]) {
 					self.canvas.width = this.Resolution[0];
 					self.canvas.height = this.Resolution[1];
 				}
 				var m = Math.max(self.canvas.width, self.canvas.height);
 				var GT = this.Parrent.getGlobalTransform();
-                if (thisComponent.isVR) {
-                    CameraTransformInverse = [GT.InverseTransform()];
-                    var EyeOffset = new self.Vector3(CameraTransformInverse[0].matrix.value[0]).Scale(this.IPD);
+				var Transformz = [];
+                if (dis.isVR) {
+					CameraTransformInverse = [GT.InverseTransform()];
+                    var EyeOffset = new self.Vector3(CameraTransformInverse[0].matrix.value[0]).Scale(-this.IPD);
                     var Transform0 = new self.transform(CameraTransformInverse[0].traslation.Add(EyeOffset),CameraTransformInverse[0].matrix);
                     var Transform1 = new self.transform(CameraTransformInverse[0].traslation.Subtract(EyeOffset),CameraTransformInverse[0].matrix);
+					Transformz = [GT.traslation.Add(EyeOffset),GT.traslation.Subtract(EyeOffset)];
                     CameraTransformInverse = [Transform0.ToMatrixTransposed3x4(),Transform1.ToMatrixTransposed3x4()];
 					//CameraTransformInverse = [Transform1.ToMatrixTransposed3x4(),Transform0.ToMatrixTransposed3x4()];
                 } else {
+					Transformz = [GT.traslation];
                     CameraTransformInverse = [GT.InverseTransform().ToMatrixTransposed3x4()];
                 }
-				//self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
-				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+				if (this.PostProcessing) {
+					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
+				} else {
+					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+				}
+				// self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
                 self.gl.clearColor(0.0,0.0,0.0, 1.0);
                 self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
                 //self.canvas.width = resolution[0];
                 //self.canvas.height = resolution[1];
-                self.gl.viewport((self.canvas.width-m)/2, (self.canvas.height-m)/2, m, m);
 				//console.log(RenderQue);
-				var w = self.canvas.width/CameraTransformInverse.length;
+				var w = this.Resolution[0]/CameraTransformInverse.length;
 				for (var k=0; k<CameraTransformInverse.length; k++) {
+					self.gl.viewport(w*k, 0, w, this.Resolution[1]);
 					for (var j=0; j<self.RenderQue.length; j++) {
-						self.gl.viewport(w*k, 0, w, self.canvas.height);
-						self.RenderQue[j].render(CameraTransformInverse[k],thisComponent,GT.traslation.value);
+						self.RenderQue[j].render(CameraTransformInverse[k],dis,Transformz[k].value);
 					}
 				}
-				/*
-				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
-				self.gl.useProgram(self.RayTracingPostProcessingShader.program);
-				
-				self.gl.activeTexture(self.gl.TEXTURE0);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+				//MotionBlurPostProcessingShader
+				if (this.PostProcessing) {
+					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+					
+					self.gl.activeTexture(self.gl.TEXTURE0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
 
-				self.gl.activeTexture(self.gl.TEXTURE1);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
-
-				self.gl.activeTexture(self.gl.TEXTURE2);
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.NormalRenderTexture);
-				
-				var lastrq = self.RenderQue[self.RenderQue.length-1];
-				var msh = lastrq.Mesh ? lastrq.Mesh : lastrq.SkinnedMesh;
-				self.gl.activeTexture(self.gl.TEXTURE3);
-				self.gl.bindTexture(self.gl.TEXTURE_2D, lastrq.VertexPositionRenderTexture);
-				
-				self.gl.activeTexture(self.gl.TEXTURE4);
-				self.gl.bindTexture(self.gl.TEXTURE_2D, msh.IndicesTexture.texture);
-				
-				self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
-				self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
-				*/
-				//this.ctx.fillStyle = "#80b3e6";
-                this.ctx.clearRect(0,0,this.canvas.width,this.canvas.height);
-                this.ctx.drawImage(self.canvas,0,0,this.canvas.width,this.canvas.height);
+					self.gl.activeTexture(self.gl.TEXTURE1);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
+					
+					self.gl.useProgram(self.MotionBlurPostProcessingShader.program);
+					var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).ToQuaternion().Slerp(self.IdentityQuaternion,0.5).ToMatrix().value;
+					// var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).value;
+					self.gl.uniformMatrix3fv(self.MotionBlurPostProcessingShader.Uniforms.uMotionMat.Location,true,x3Mat.flat());
+					//uAspect
+					self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+					var m = Math.max(this.Resolution[0],this.Resolution[1]);
+					self.gl.uniform2fv(self.MotionBlurPostProcessingShader.Uniforms.uAspect.Location,[this.Resolution[0]/m,this.Resolution[1]/m]);
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+				}
+				this.__proto__.PreviousMat = GT.matrix;
+                dis.ctx.clearRect(0,0,dis.canvas.width,dis.canvas.height);
+                dis.ctx.drawImage(self.canvas,0,0,dis.canvas.width,dis.canvas.height);
             }
         }
     }
 	this.Components.ReflectionProbe = function(res) {
         this.Enabled = true;
-		res = res || 64;
+		res = res || 128;
 		this.Resolution = res;
 		this.Cubemap = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
@@ -1823,10 +2308,10 @@ var KhawnEngine = function() {
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					for (var j=0; j<self.RenderQue.length; j++) {
 						var rp = self.RenderQue[j].ReflectionProbe;
-						self.RenderQue[j].ReflectionProbe = {Cubemap:null,Position:{value:[0,0,0]}};
+						self.RenderQue[j].__proto__.ReflectionProbe = [{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}}];
 						self.gl.viewport(0,0,this.Resolution,this.Resolution);
-						self.RenderQue[j].render(CamTranfm,{FeildOfView:60,ClipDistance:0.2},Pos.value);
-						self.RenderQue[j].ReflectionProbe = rp;
+						self.RenderQue[j].render(CamTranfm,{FeildOfView:59,ClipDistance:0.2},Pos.value);
+						self.RenderQue[j].__proto__.ReflectionProbe = rp;
 					}
 					//ReflectionProbePostProcessingShader
 					self.gl.useProgram(self.ReflectionProbePostProcessingShader.program);
@@ -1841,6 +2326,7 @@ var KhawnEngine = function() {
 					self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_CUBE_MAP_POSITIVE_X+i, this.Cubemap, 0);
 					self.gl.clearColor(0.0,0.0,0.0, Infinity);
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
 					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 				}
 				self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
@@ -1850,6 +2336,8 @@ var KhawnEngine = function() {
 	}
     this.Components.BoxCollider = function(p0,p1) {
         this.Enabled = true;
+		p0 = p0 || new Engine.Vector3([0.5,0.5,0.5]);
+		p1 = p1 || new Engine.Vector3([-0.5,-0.5,-0.5]);
 		this.Min = p0.Min(p1);
 		this.Max = p0.Max(p1);
         this.RayCast = function(pos,dir,bothsides) {
@@ -1876,6 +2364,15 @@ var KhawnEngine = function() {
 				return false;
 			}
         }
+		this.IsInside = function(point) {
+			if (this.Enabled) {
+				var trsfm = this.Parrent.getGlobalTransform().InverseTransform();
+				var p = trsfm.TransformPoint(point);
+				return ((p.value[0] >= this.Min.value[0] && p.value[0] <= this.Max.value[0]) && (p.value[1] >= this.Min.value[1] && p.value[1] <= this.Max.value[1])) && (p.value[2] >= this.Min.value[2] && p.value[2] <= this.Max.value[2]);
+			} else {
+				return false;
+			}
+		}
     }
     this.Components.RigidBody = function() {
         this.Enabled = true;
@@ -2728,6 +3225,7 @@ var KhawnEngine = function() {
         }
         this.ScaleThisBy = function(s) {
             this.value = [[this.value[0][0]*s,this.value[0][1]*s,this.value[0][2]*s],[this.value[1][0]*s,this.value[1][1]*s,this.value[1][2]*s],[this.value[2][0]*s,this.value[2][1]*s,this.value[2][2]*s]];
+			return this;
         }
         this.YaxsisLookAt = function(p) {
 			var x = new self.Vector3(this.value[0]);
@@ -3000,6 +3498,14 @@ var KhawnEngine = function() {
             Child.Parrent = ThisObject;
             this.Children.push(Child);
         }
+		this.Duplicate = function() {
+			var newObj = new self.Object();
+			newObj = this.transform.Clone();
+			for (var i=0; i<this.Children.length; i++) {
+				newObj.addChild(this.Children[i].Clone());
+			}
+			return newObj;
+		}
 		this.addChildKeepTransform = function(Child) {
 			Child.transform = this.getGlobalTransform().InverseTransformTransform(Child.transform);
             Child.Parrent = ThisObject;
@@ -3179,31 +3685,19 @@ var KhawnEngine = function() {
 			}
 		}
 	}
-	this.Math.One = self.Math.ComplexNumber(1,0);
-	this.Math.Two = self.Math.ComplexNumber(2,0);
-	this.Math.Pi = self.Math.ComplexNumber(Math.PI,0);
-	this.Math.PiOver2 = self.Math.ComplexNumber(Math.PI/2,0);
+	this.Math.One = new self.Math.ComplexNumber(1,0);
+	this.Math.Two = new self.Math.ComplexNumber(2,0);
+	this.Math.Pi = new self.Math.ComplexNumber(Math.PI,0);
+	this.Math.PiOver2 = new self.Math.ComplexNumber(Math.PI/2,0);
 	this.Math.sin = function(c) {
-		var result = new self.Math.ComplexNumber(0,0);
-		var m = 1;
-		var v = c;
-		for (var i=0; i<128; i++) {
-			result = result.Add(v.Multiply(1/m));
-			v = v.Multiply(c).Multiply(c);
-			m *= -((i*2)+2)*((i*2)+3);
-		}
-		return result;
+		var ep = Math.exp(c.imaginary)/2;
+		var en = 0.25/ep;
+		return new self.Math.ComplexNumber((ep+en)*Math.sin(c.real),(ep-en)*Math.cos(c.real));
 	}
 	this.Math.cos = function(c) {
-		var result = new self.Math.ComplexNumber(0,0);
-		var m = 1;
-		var v = new self.Math.ComplexNumber(1,0);
-		for (var i=0; i<128; i++) {
-			result = result.Add(v.Multiply(1/m));
-			v = v.Multiply(c).Multiply(c);
-			m *= -((i*2)+1)*((i*2)+2);
-		}
-		return result;
+		var ep = Math.exp(c.imaginary)/2;
+		var en = 0.25/ep;
+		return new self.Math.ComplexNumber((ep+en)*Math.cos(c.real),(en-ep)*Math.sin(c.real));
 	}
 	this.Math.gammaFunction = function(c) {
 		if (c.real < 0) {
@@ -3226,7 +3720,7 @@ var KhawnEngine = function() {
 		} else {
 			var result = new self.Math.ComplexNumber(0,0);
 			c = c.Oposite();
-			for (var i=new self.Math.ComplexNumber(1,0); i.real<128; i.real++) {
+			for (var i=new self.Math.ComplexNumber(1,0); i.real<256; i.real++) {
 				result.AddThis(i.pow(c));
 			}
 			return result;
@@ -3237,6 +3731,53 @@ var KhawnEngine = function() {
 	this.IdentityMatrix = new self.Matrix3x3();
     this.Root = new this.Object();
     this.Root.Name = "Root";
+	this.Assets = [];
+	this.listAssets = function() {
+		function addAsset(asslol) {
+			if (!self.Assets.includes(asslol)) {
+				self.Assets.push(asslol);
+			}
+		}
+		function findAssets(oj) {
+			for (var i=0; i<oj.Components.length; i++) {
+				if (oj.Components[i] instanceof self.Components.MeshRenderer) {
+					addAsset(oj.Components[i].Mesh);
+					for (var j=0; j<oj.Components[i].Materials.length; j++) {
+						addAsset(oj.Components[i].Materials[j]);
+						addAsset(oj.Components[i].Materials[j].shader);
+						var Vals = Object.keys(oj.Components[i].Materials[j].Values);
+						for (var k=0; k<Vals.length; k++) {
+							if (oj.Components[i].Materials[j].Values[Vals[k]] instanceof self.Texture) {
+								addAsset(oj.Components[i].Materials[j].Values[Vals[k]]);
+							}
+						}
+					}
+				} else if (oj.Components[i] instanceof self.Components.SkinnedMeshRenderer) {
+					addAsset(oj.Components[i].SkinnedMesh);
+					for (var j=0; j<oj.Components[i].Materials.length; j++) {
+						addAsset(oj.Components[i].Materials[j]);
+						addAsset(oj.Components[i].Materials[j].shader);
+						var Vals = Object.keys(oj.Components[i].Materials[j].Values);
+						for (var k=0; k<Vals.length; k++) {
+							if (oj.Components[i].Materials[j].Values[Vals[k]] instanceof self.Texture) {
+								addAsset(oj.Components[i].Materials[j].Values[Vals[k]]);
+							}
+						}
+					}
+				}
+			}
+			for (var i=0; i<oj.Children.length; i++) {
+				findAssets(oj.Children[i]);
+			}
+		}
+		findAssets(self.Root);
+		return self.Assets;
+	}
+	this.cleanUnusedAssets = function() {
+		this.Assets = [];
+		self.listAssets();
+		self.gl.flush();
+	}
     this.CreateMeshObject = function(mesh,Mats) {
         var MeshObject = new self.Object();
         MeshObject.Name = "New Mesh";
@@ -3244,10 +3785,9 @@ var KhawnEngine = function() {
         MeshObject.AddComponent(MeshComponent);
         return MeshObject;
     }
-    this.DebugBoneMesh = new this.Mesh({VertexPositions:[[0.001,0.15,0.001],[-0.001,0.15,0.001],[0.001,-0.15,0.001],[-0.001,-0.15,0.001],[0.01,0.01,-0.01],[-0.01,0.01,-0.01],[0.01,-0.01,-0.01],[-0.01,-0.01,-0.01]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
-	/*
+    this.DebugBoneMesh = new this.Mesh({VertexPositions:[[0.001,0.15,0.001],[-0.001,0.15,0.001],[0.01,-0.01,0.01],[-0.01,-0.01,0.01],[0.001,0.15,-0.001],[-0.001,0.15,-0.001],[0.01,-0.01,-0.01],[-0.01,-0.01,-0.01]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
 	this.DebugArrowMesh = new this.Mesh((function(){
-		var MeshData = {VertexPositions:[],Indices:[]};
+		var MeshData = {VertexPositions:[],Indices:[[]]};
 		var side = [[0,0,0],[0.025,0,0],[0.025,0.5,0],[0.05,0.5,0],[0,0.6,0]];
 		for (var i=0; i<16; i++) {
 			var r = i*Math.PI/8;
@@ -3261,19 +3801,18 @@ var KhawnEngine = function() {
 				//}
 				if (i !== 0) {
 					var idx = MeshData.VertexPositions.length-side.length;
-					MeshData.Indices.push([MeshData.VertexPositions.length-1,idx,idx-1]);
-					MeshData.Indices.push([MeshData.VertexPositions.length-1,MeshData.VertexPositions.length-2,idx-1]);
+					MeshData.Indices[0].push([MeshData.VertexPositions.length-1,idx,idx-1]);
+					MeshData.Indices[0].push([MeshData.VertexPositions.length-1,MeshData.VertexPositions.length-2,idx-1]);
 				}
 			}
 		}
 		for (var j=0; j<side.length; j++) {
 			var idx = MeshData.VertexPositions.length-(side.length-j);
-			MeshData.Indices.push([idx,j,j-1]);
-			MeshData.Indices.push([idx,idx-1,j-1]);
+			MeshData.Indices[0].push([idx,j,j-1]);
+			MeshData.Indices[0].push([idx,idx-1,j-1]);
 		}
-		return [MeshData];
+		return MeshData;
 	})());
-	*/
     this.CreateSkinnedMeshObject = function(SkinnedMesh,Mats) {
         var SkinnedMeshObject = new self.Object();
         SkinnedMeshObject.Name = "New Skinned Mesh";
@@ -3313,7 +3852,7 @@ var KhawnEngine = function() {
 			self.Update(obj.Children[i]);
 		}
 	}
-    this.Render = function() {
+	this.UpdateRenderQue = function() {
 		self.RenderQue = [];
 		self.Lights = [];
 		self.ReflectionProbes = [];
@@ -3324,7 +3863,10 @@ var KhawnEngine = function() {
 						self.RenderQue.push(Obj.Children[i].Components[j]);
 					}
 					if ((Obj.Children[i].Components[j] instanceof self.Components.PointLight) || (Obj.Children[i].Components[j] instanceof self.Components.DirectionalLight)) {
-						self.Lights.push(Obj.Children[i].Components[j].getData());
+						var data = Obj.Children[i].Components[j].getData();
+						if (data) {
+							self.Lights.push(data);
+						}
 					}
 					if (Obj.Children[i].Components[j] instanceof self.Components.ReflectionProbe) {
 						self.ReflectionProbes.push(Obj.Children[i].Components[j].getData());
@@ -3334,6 +3876,9 @@ var KhawnEngine = function() {
 			}
 		}
 		renderChildren(self.Root);
+	}
+    this.Render = function() {
+		self.UpdateRenderQue();
         function RenderCameras(obj) {
             for (var i = 0; i < obj.Components.length; i++) {
                 if (obj.Components[i] instanceof self.Components.CamreaViewPort) {
