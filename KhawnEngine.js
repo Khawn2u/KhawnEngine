@@ -226,6 +226,38 @@ var KhawnEngine = function() {
 			// color = vec4(texture(uColorTex,((Pos1.xy/Pos1.z)+1.0)/2.0).rgb,1.0);
 		}
 	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uMotionMat',Type:'mat3'},{Name:'uAspect',Type:'vec2'}]);
+	this.DepthOfFeildProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		uniform highp sampler2D uColorTex;
+		uniform highp sampler2D uPosTex;
+		uniform highp float uFocalDistance;
+		uniform highp float uArperture;
+		
+		in highp vec4 fragpos;
+		void main(void) {
+			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
+			highp vec2 xy = (fragpos.xy+1.0)*0.5;
+			// color = vec4(texture(uColorTex,xy,5.0).xyz,1.0);
+			color = vec4(texture(uColorTex,xy,log2(uArperture*abs((texelFetch(uPosTex,Pos,1).w-1.0)/uFocalDistance)+1.0)).xyz,1.0);
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uPosTex',Type:'sampler2D',Value:1},{Name:'uFocalDistance',Type:'float'},{Name:'uArperture',Type:'float'}]);
+	this.BloomPostProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		uniform highp sampler2D uColorTex;
+		
+		in highp vec4 fragpos;
+		void main(void) {
+			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
+			highp vec2 xy = (fragpos.xy+1.0)*0.5;
+			highp vec3 bloom = max(texture(uColorTex,xy,1.0).xyz-1.0,vec3(0));
+			for (highp float i=1.0; i<32.0; i++) {
+				bloom += max(texture(uColorTex,xy,log2(i)).xyz-i,vec3(0));
+			}
+			color = vec4(texelFetch(uColorTex,Pos,0).xyz+bloom,1.0);
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0}]);
 	this.VertexMapingShader = function(fs,uniforms) {
         this.program = self.gl.createProgram();
         this.vs = self.VertexMapingVertexShader;
@@ -871,6 +903,7 @@ var KhawnEngine = function() {
 							for (var j = 0; j < Child.Children[bIdx].Children.length; j++) {
 								if (Child.Children[bIdx].Children[j]) {
 									var Nme = Child.Children[bIdx].Children[j].Properties[1].split("\x00")[0];
+									Nme = Encoding.convert(Nme, {from:'SJIS'});
 									var DataChild = Child.Children[bIdx].Children[j].Children[0];
 									if (DataChild) {
 										if (DataChild.Indexes[0].Properties[0].length) {
@@ -890,7 +923,9 @@ var KhawnEngine = function() {
 						var idx = 0;
 						for (var j = 0; j < Child.Children[wIdx].Children.length; j++) {
 							if (Child.Children[wIdx].Children[j]) {
+								// Encoding.convert(u8arr.slice(0,14), {from:'SJIS',type:'string'})
 								var Nme = Child.Children[wIdx].Children[j].Properties[1].split("\x00")[0];
+								// Nme = Encoding.convert(Nme, {from:'SJIS',type:'string'});
 								Bones.push(Nme);
 								BoneNodeIDs.push(Child.Children[wIdx].Children[j].Children[0].Properties[0]);
 								if (Child.Children[wIdx].Children[j].Indexes) {
@@ -1122,18 +1157,18 @@ var KhawnEngine = function() {
 	}
 	this.Japaneasetuples = [['ｳﾞ','ヴ'],['ｶﾞ','ガ'],['ｷﾞ','ギ'],['ｸﾞ','グ'],['ｹﾞ','ゲ'],['ｺﾞ','ゴ'],['ｻﾞ','ザ'],['ｼﾞ','ジ'],['ｽﾞ','ズ'],['ｾﾞ','ゼ'],['ｿﾞ','ゾ'],['ﾀﾞ','ダ'],['ﾁﾞ','ヂ'],['ﾂﾞ','ヅ'],['ﾃﾞ','デ'],['ﾄﾞ','ド'],['ﾊﾞ','バ'],['ﾊﾟ','パ'],['ﾋﾞ','ビ'],['ﾋﾟ','ピ'],['ﾌﾞ','ブ'],['ﾌﾟ','プ'],['ﾍﾞ','ベ'],['ﾍﾟ','ペ'],['ﾎﾞ','ボ'],['ﾎﾟ','ポ'],['｡','。'],['｢','「'],['｣','」'],['､','、'],['･','・'],['ｦ','ヲ'],['ｧ','ァ'],['ｨ','ィ'],['ｩ','ゥ'],['ｪ','ェ'],['ｫ','ォ'],['ｬ','ャ'],['ｭ','ュ'],['ｮ','ョ'],['ｯ','ッ'],['ｰ','ー'],['ｱ','ア'],['ｲ','イ'],['ｳ','ウ'],['ｴ','エ'],['ｵ','オ'],['ｶ','カ'],['ｷ','キ'],['ｸ','ク'],['ｹ','ケ'],['ｺ','コ'],['ｻ','サ'],['ｼ','シ'],['ｽ','ス'],['ｾ','セ'],['ｿ','ソ'],['ﾀ','タ'],['ﾁ','チ'],['ﾂ','ツ'],['ﾃ','テ'],['ﾄ','ト'],['ﾅ','ナ'],['ﾆ','ニ'],['ﾇ','ヌ'],['ﾈ','ネ'],['ﾉ','ノ'],['ﾊ','ハ'],['ﾋ','ヒ'],['ﾌ','フ'],['ﾍ','ヘ'],['ﾎ','ホ'],['ﾏ','マ'],['ﾐ','ミ'],['ﾑ','ム'],['ﾒ','メ'],['ﾓ','モ'],['ﾔ','ヤ'],['ﾕ','ユ'],['ﾖ','ヨ'],['ﾗ','ラ'],['ﾘ','リ'],['ﾙ','ル'],['ﾚ','レ'],['ﾛ','ロ'],['ﾜ','ワ'],['ﾝ','ン']];
 	this.Japaneasetranslate = [['全ての親','ParentNode'],['操作中心','ControlNode'],['センター','Center'],['ｾﾝﾀｰ','Center'],['グループ','Group'],['グルーブ','Groove'],['キャンセル','Cancel'],['上半身','UpperBody'],['下半身','LowerBody'],['手首','Wrist'],['足首','Ankle'],['首','Neck'],['頭','Head'],['顔','Face'],['下顎','Chin'],['下あご','Chin'],['あご','Jaw'],['顎','Jaw'],['両目','Eyes'],['目','Eye'],['眉','Eyebrow'],['舌','Tongue'],['涙','Tears'],['泣き','Cry'],['歯','Teeth'],['照れ','Blush'],['青ざめ','Pale'],['ガーン','Gloom'],['汗','Sweat'],['怒','Anger'],['感情','Emotion'],['符','Marks'],['暗い','Dark'],['腰','Waist'],['髪','Hair'],['三つ編み','Braid'],['胸','Breast'],['乳','Boob'],['おっぱい','Tits'],['筋','Muscle'],['腹','Belly'],['鎖骨','Clavicle'],['肩','Shoulder'],['腕','Arm'],['うで','Arm'],['ひじ','Elbow'],['肘','Elbow'],['手','Hand'],['親指','Thumb'],['人指','IndexFinger'],['人差指','IndexFinger'],['中指','MiddleFinger'],['薬指','RingFinger'],['小指','LittleFinger'],['足','Leg'],['ひざ','Knee'],['つま','Toe'],['袖','Sleeve'],['新規','New'],['ボーン','Bone'],['捩','Twist'],['回転','Rotation'],['軸','Axis'],['ﾈｸﾀｲ','Necktie'],['ネクタイ','Necktie'],['ヘッドセット','Headset'],['飾り','Accessory'],['リボン','Ribbon'],['襟','Collar'],['紐','String'],['コード','Cord'],['イヤリング','Earring'],['メガネ','Eyeglasses'],['眼鏡','Glasses'],['帽子','Hat'],['ｽｶｰﾄ','Skirt'],['スカート','Skirt'],['パンツ','Pantsu'],['シャツ','Shirt'],['フリル','Frill'],['マフラー','Muffler'],['ﾏﾌﾗｰ','Muffler'],['服','Clothes'],['ブーツ','Boots'],['ねこみみ','CatEars'],['ジップ','Zip'],['ｼﾞｯﾌﾟ','Zip'],['ダミー','Dummy'],['ﾀﾞﾐｰ','Dummy'],['基','Category'],['あほ毛','Antenna'],['アホ毛','Antenna'],['モミアゲ','Sideburn'],['もみあげ','Sideburn'],['ツインテ','Twintail'],['おさげ','Pigtail'],['ひらひら','Flutter'],['調整','Adjustment'],['補助','Aux'],['右','Right'],['左','Left'],['前','Front'],['後ろ','Behind'],['後','Back'],['横','Side'],['中','Middle'],['上','Upper'],['下','Lower'],['親','Parent'],['先','Tip'],['パーツ','Part'],['光','Light'],['戻','Return'],['羽','Wing'],['根','Base'],['毛','Strand'],['尾','Tail'],['尻','Butt'],['０','0'],['１','1'],['２','2'],['３','3'],['４','4'],['５','5'],['６','6'],['７','7'],['８','8'],['９','9'],['ａ','a'],['ｂ','b'],['ｃ','c'],['ｄ','d'],['ｅ','e'],['ｆ','f'],['ｇ','g'],['ｈ','h'],['ｉ','i'],['ｊ','j'],['ｋ','k'],['ｌ','l'],['ｍ','m'],['ｎ','n'],['ｏ','o'],['ｐ','p'],['ｑ','q'],['ｒ','r'],['ｓ','s'],['ｔ','t'],['ｕ','u'],['ｖ','v'],['ｗ','w'],['ｘ','x'],['ｙ','y'],['ｚ','z'],['Ａ','A'],['Ｂ','B'],['Ｃ','C'],['Ｄ','D'],['Ｅ','E'],['Ｆ','F'],['Ｇ','G'],['Ｈ','H'],['Ｉ','I'],['Ｊ','J'],['Ｋ','K'],['Ｌ','L'],['Ｍ','M'],['Ｎ','N'],['Ｏ','O'],['Ｐ','P'],['Ｑ','Q'],['Ｒ','R'],['Ｓ','S'],['Ｔ','T'],['Ｕ','U'],['Ｖ','V'],['Ｗ','W'],['Ｘ','X'],['Ｙ','Y'],['Ｚ','Z'],['＋','+'],['－','-'],['＿','_'],['／','/'],['.','_']];
+	this.Translate = function(u8arr) {
+		var resu = Encoding.convert(u8arr, {from:'SJIS',type:'string'}).replaceAll("\x00","");
+		for (var i=0; i<self.Japaneasetuples.length; i++) {
+			resu = resu.replaceAll(self.Japaneasetuples[i][0],self.Japaneasetuples[i][1]);
+		}
+		for (var i=0; i<self.Japaneasetranslate.length; i++) {
+			resu = resu.replaceAll(self.Japaneasetranslate[i][0],self.Japaneasetranslate[i][1]);
+		}
+		return resu;
+	}
 	this.VMDdecoder = function() {
 		this.parsed = {};
-		this.Translate = function(u8arr) {
-			var resu = Encoding.convert(u8arr.slice(0,14), {from:'SJIS',type:'string'}).replaceAll("\x00","");
-			for (var i=0; i<self.Japaneasetuples.length; i++) {
-				resu = resu.replaceAll(self.Japaneasetuples[i][0],self.Japaneasetuples[i][1]);
-			}
-			for (var i=0; i<self.Japaneasetranslate.length; i++) {
-				resu = resu.replaceAll(self.Japaneasetranslate[i][0],self.Japaneasetranslate[i][1]);
-			}
-			return resu;
-		}
 		this.parse = function(data) {
 			var idx = 0;
 			var isNew = null;
@@ -1161,7 +1196,7 @@ var KhawnEngine = function() {
 			d = d.slice(4);
 			while (d.length >= 111 && Part == 0) {
 				//utf16le
-				var name = this.Translate(d.slice(0,15));
+				var name = self.Translate(d.slice(0,15));
 				var Frame = new Uint32Array(d.slice(15,19).buffer)[0];
 				var P = new Float32Array(d.slice(19,31).buffer);
 				var Q = new Float32Array(d.slice(31,47).buffer);
@@ -1184,7 +1219,7 @@ var KhawnEngine = function() {
 				}
 			}
 			while (d.length >= 23 && Part == 1) {
-				var name = this.Translate(d.slice(0,15));
+				var name = self.Translate(d.slice(0,15));
 				var Frame = new Uint32Array(d.slice(15,19).buffer)[0];
 				var Value = new Float32Array(d.slice(19,23).buffer)[0];
 				if (!BlendShapes.includes(name)) {
@@ -1323,7 +1358,7 @@ var KhawnEngine = function() {
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		uniform samplerCube uReflectionCubemap[4];
-		uniform highp vec3 uReflectionPosition[4];
+		uniform highp vec4 uReflectionPosition[4];
 		uniform highp vec3 LightColors[24];
 		uniform highp vec4 LightPositions[24];
 		uniform highp float Reflectivity;
@@ -1341,24 +1376,25 @@ var KhawnEngine = function() {
 			vect = mix(vect,vect/dot(vect,vect),0.5);
 			return vect;
 		}
-		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir, highp vec4 lvl) {
+		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir, highp float rough) {
 			highp vec3 p = pos;
 			highp vec3 v;
 			bool hit;
 			highp float dist = Infinity;
+			highp float dtmp = Infinity;
 			for (highp float i=0.02; i<1.0; i+=0.02) {
 				p = pos-(dir*i/(1.0-i));
-				v = abs(uReflectionPosition[0]-p);
-				hit = texture(uReflectionCubemap[0],uReflectionPosition[0]-p).w < max(v.x,max(v.y,v.z));
+				v = abs(uReflectionPosition[0].xyz-p);
+				hit = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
 				if (hit) {
-					v = abs(uReflectionPosition[1]-p);
-					hit = texture(uReflectionCubemap[1],uReflectionPosition[1]-p).w < max(v.x,max(v.y,v.z));
+					v = abs(uReflectionPosition[1].xyz-p);
+					hit = texture(uReflectionCubemap[1],uReflectionPosition[1].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
 					if (hit) {
-						v = abs(uReflectionPosition[2]-p);
-						hit = texture(uReflectionCubemap[2],uReflectionPosition[2]-p).w < max(v.x,max(v.y,v.z));
+						v = abs(uReflectionPosition[2].xyz-p);
+						hit = texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
 						if (hit) {
-							v = abs(uReflectionPosition[3]-p);
-							hit = texture(uReflectionCubemap[3],uReflectionPosition[3]-p).w < max(v.x,max(v.y,v.z));
+							v = abs(uReflectionPosition[3].xyz-p);
+							hit = texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
 							if (hit) {
 								dist = i/(1.0-i);
 								break;
@@ -1369,41 +1405,43 @@ var KhawnEngine = function() {
 			}
 			if (hit) {
 				for (lowp int i=0; i<8; i++) {
-					v = abs(uReflectionPosition[0]-p);
-					dist = texture(uReflectionCubemap[0],uReflectionPosition[0]-p).w-max(v.x,max(v.y,v.z));
-					v = abs(uReflectionPosition[1]-p);
-					dist = max(texture(uReflectionCubemap[1],uReflectionPosition[1]-p).w-max(v.x,max(v.y,v.z)),dist);
-					v = abs(uReflectionPosition[2]-p);
-					dist = max(texture(uReflectionCubemap[2],uReflectionPosition[2]-p).w-max(v.x,max(v.y,v.z)),dist);
-					v = abs(uReflectionPosition[3]-p);
-					dist = max(texture(uReflectionCubemap[3],uReflectionPosition[3]-p).w-max(v.x,max(v.y,v.z)),dist);
-					p -= dir*min(dist,0.0);
+					v = abs(uReflectionPosition[0].xyz-p);
+					dtmp = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w-max(v.x,max(v.y,v.z));
+					v = abs(uReflectionPosition[1].xyz-p);
+					dtmp = max(texture(uReflectionCubemap[1],uReflectionPosition[1].xyz-p).w-max(v.x,max(v.y,v.z)),dtmp);
+					v = abs(uReflectionPosition[2].xyz-p);
+					dtmp = max(texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w-max(v.x,max(v.y,v.z)),dtmp);
+					v = abs(uReflectionPosition[3].xyz-p);
+					dtmp = max(texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w-max(v.x,max(v.y,v.z)),dtmp);
+					dist += min(dtmp,0.01);
+					p = pos-(dir*dist);
 				}
 			}
 			highp float count = 0.0;
-			highp float s0 = texture(uReflectionCubemap[0],uReflectionPosition[0]-p).w+0.2;
-			highp float s1 = texture(uReflectionCubemap[1],uReflectionPosition[1]-p).w+0.2;
-			highp float s2 = texture(uReflectionCubemap[2],uReflectionPosition[2]-p).w+0.2;
-			highp float s3 = texture(uReflectionCubemap[3],uReflectionPosition[3]-p).w+0.2;
+			highp float s0 = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w;
+			highp float s1 = texture(uReflectionCubemap[1],uReflectionPosition[1].xyz-p).w;
+			highp float s2 = texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w;
+			highp float s3 = texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w;
 			highp vec3 result;
-			v = abs(uReflectionPosition[0]-p);
-			if (s0 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[0],uReflectionPosition[0]-p,lvl[0]).rgb;
+			rough = log2(rough*(dist*rough+1.0)+1.0);
+			v = abs(uReflectionPosition[0].xyz-p);
+			if (s0+0.2 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,rough*uReflectionPosition[0].w).rgb;
 				count++;
 			}
-			v = abs(uReflectionPosition[1]-p);
-			if (s1 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[1],uReflectionPosition[1]-p,lvl[1]).rgb;
+			v = abs(uReflectionPosition[1].xyz-p);
+			if (s1+0.2 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,rough*uReflectionPosition[1].w).rgb;
 				count++;
 			}
-			v = abs(uReflectionPosition[2]-p);
-			if (s2 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[2],uReflectionPosition[2]-p,lvl[2]).rgb;
+			v = abs(uReflectionPosition[2].xyz-p);
+			if (s2+0.2 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,rough*uReflectionPosition[2].w).rgb;
 				count++;
 			}
-			v = abs(uReflectionPosition[3]-p);
-			if (s3 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[3],uReflectionPosition[3]-p,lvl[3]).rgb;
+			v = abs(uReflectionPosition[3].xyz-p);
+			if (s3+0.2 >= max(v.x,max(v.y,v.z))) {
+				result += textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,rough*uReflectionPosition[3].w).rgb;
 				count++;
 			}
 			if (count == 0.0) {
@@ -1417,6 +1455,13 @@ var KhawnEngine = function() {
 			highp float cost = -dot(refract(dir,norml,1.0/ior),norml);
 			return clamp((cost-cosi)/(cosi+cost),0.04,1.0);
 		}
+		highp float liniarSpecular(highp float val, highp float d) {
+			return max(((val-1.0)/d)+1.0,0.0);
+		}
+		highp float exponentalSpecular(highp float val, highp float d) {
+			highp float k = min(1.0/(d*d),1000000.0);
+			return pow(max(val,0.0),k)*(1.0+k)*0.1;
+		}
         void main(void) {
 			position = vec4(WorldPosition,CameraSpacePosition.z);
 			highp vec3 normal = normalize(Normal);
@@ -1424,6 +1469,7 @@ var KhawnEngine = function() {
 			highp vec3 refl = reflect(ViewDir,normal);
 			highp float fresnel = FresnelReflectionCoefficient(ViewDir,normal,IOR);
 			highp vec3 DirectLight;
+			highp vec3 ReflectedLight;
 			highp float reflection = mix(fresnel,1.0,Reflectivity);
 			highp vec3 position = WorldPosition+(normal*0.0125);
 			for (lowp int i = 0; i<24; i++) {
@@ -1432,11 +1478,10 @@ var KhawnEngine = function() {
 				if (div == 0.0) {
 					break;
 				}
-				DirectLight += LightColors[i]*max(dot(normalize(lig),normal)/div,0.0);
+				highp vec3 lignorm = normalize(lig);
+				DirectLight += LightColors[i]*max(dot(lignorm,normal)/div,0.0);
 			}
-			highp vec4 lodm = vec4(log2(float(textureSize(uReflectionCubemap[0],0))),log2(float(textureSize(uReflectionCubemap[1],0))),log2(float(textureSize(uReflectionCubemap[2],0))),log2(float(textureSize(uReflectionCubemap[3],0))));
-			highp vec4 lod = lodm*log2(Roughness+1.0);
-			highp vec3 ReflectedLight = RayMarch(position,refl,lod);
+			ReflectedLight += RayMarch(position,refl,Roughness);
 			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,ReflectedLight,reflection),1);
 			// color = vec4(vec3(fresnel),1.0);
         }
@@ -1663,6 +1708,13 @@ var KhawnEngine = function() {
 	this.randomAngle = function() {
 		return new self.Angle(Math.random()*self.Tau,true);
 	}
+	this.randomQuaternion = function() {
+		var q = new self.Quaternion([1,1,1,1]);
+		while (q.Length() >= 1) {
+			q.value = [(Math.random()*2)-1,(Math.random()*2)-1,(Math.random()*2)-1,(Math.random()*2)-1];
+		}
+		return q;
+	}
     this.Components = {};
 	this.Components.PointLight = function(color) {
 		this.Enabled = true;
@@ -1690,7 +1742,7 @@ var KhawnEngine = function() {
         this.Materials = materials;
 		this.__proto__.LightColors = [];
 		this.__proto__.LightPositions = [];
-		this.__proto__.ReflectionProbe = null;
+		this.__proto__.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 		var VertexPositionRenderBuffer = self.gl.createFramebuffer();
 		var VertexPositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexPositionRenderTexture);
@@ -1742,7 +1794,7 @@ var KhawnEngine = function() {
 			this.__proto__.LightColors = LightColors.flat();
 			this.__proto__.LightPositions = LightPositions.flat();
 			
-			var Refl = [{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}}];
+			var Refl = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 			for (var i=0; i<self.ReflectionProbes.length; i++) {
 				var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
 				if (d < Refl[3].Distence) {
@@ -1805,7 +1857,7 @@ var KhawnEngine = function() {
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
-						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].Position.value.concat(this.ReflectionProbe[1].Position.value).concat(this.ReflectionProbe[2].Position.value).concat(this.ReflectionProbe[3].Position.value));
+						self.gl.uniform4fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].PosLod.concat(this.ReflectionProbe[1].PosLod).concat(this.ReflectionProbe[2].PosLod).concat(this.ReflectionProbe[3].PosLod));
 						//uReflectionPosition
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
@@ -1893,7 +1945,7 @@ var KhawnEngine = function() {
         }
 		this.__proto__.LightColors = [];
 		this.__proto__.LightPositions = [];
-		this.__proto__.ReflectionProbe = null;
+		this.__proto__.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 		var VertexPositionRenderBuffer = self.gl.createFramebuffer();
 		var VertexPositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexPositionRenderTexture);
@@ -1961,7 +2013,7 @@ var KhawnEngine = function() {
 				this.__proto__.LightColors = LightColors.flat();
 				this.__proto__.LightPositions = LightPositions.flat();
 				
-				var Refl = [{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}}];
+				var Refl = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 				for (var i=0; i<self.ReflectionProbes.length; i++) {
 					var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
 					if (d < Refl[3].Distence) {
@@ -2101,7 +2153,7 @@ var KhawnEngine = function() {
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
-						self.gl.uniform3fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].Position.value.concat(this.ReflectionProbe[1].Position.value).concat(this.ReflectionProbe[2].Position.value).concat(this.ReflectionProbe[3].Position.value));
+						self.gl.uniform4fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].PosLod.concat(this.ReflectionProbe[1].PosLod).concat(this.ReflectionProbe[2].PosLod).concat(this.ReflectionProbe[3].PosLod));
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
                         var m = Math.max(VPdims[2],VPdims[3]);
@@ -2152,26 +2204,26 @@ var KhawnEngine = function() {
 	this.RenderQue = [];
 	this.Lights = [];
 	this.ReflectionProbes = [];
-    this.Components.CamreaViewPort = function(canvas,resolution,feildOfView,clipDistance,isVR,IPD) {
+    this.Components.CamreaViewPort = function(canvas,resolution,feildOfView,clipDistance,isVR,IPD,pp) {
         this.Enabled = true;
         this.ClipDistance = clipDistance || 0.2;
         this.FeildOfView = feildOfView || 100;
         this.isVR = isVR || false;
-		this.PostProcessing = true;
+		this.PostProcessing = (pp === undefined) ? true : !!pp;
         this.IPD = IPD || 0.058;
 		this.Resolution = resolution;
         // this.IPD = IPD || 1;
-        this.__proto__.canvas = canvas;
-		this.__proto__.PreviousMat = new self.Matrix3x3();
+        this.canvas = canvas;
+		this.PreviousMat = new self.Matrix3x3();
         var dis = this;
-		this.__proto__.FrameBuffer = self.gl.createFramebuffer();
-		this.__proto__.DepthBuffer = self.gl.createRenderbuffer();
+		this.FrameBuffer = self.gl.createFramebuffer();
+		this.DepthBuffer = self.gl.createRenderbuffer();
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
 		self.gl.bindRenderbuffer(self.gl.RENDERBUFFER, this.DepthBuffer);
 		self.gl.renderbufferStorage(self.gl.RENDERBUFFER, self.gl.DEPTH_COMPONENT24, this.Resolution[0], this.Resolution[1]);
 		self.gl.framebufferRenderbuffer(self.gl.FRAMEBUFFER, self.gl.DEPTH_ATTACHMENT, self.gl.RENDERBUFFER, this.DepthBuffer);
 		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1]);
-		this.__proto__.ColorRenderTexture = self.gl.createTexture();
+		this.ColorRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.ColorRenderTexture);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
@@ -2179,7 +2231,7 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.ColorRenderTexture, 0);
-		this.__proto__.PositionRenderTexture = self.gl.createTexture();
+		this.PositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PositionRenderTexture);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
@@ -2187,7 +2239,7 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT1, self.gl.TEXTURE_2D, this.PositionRenderTexture, 0);
-        this.__proto__.ctx = canvas.getContext("2d");
+        this.ctx = canvas.getContext("2d");
         this.renderFrame = function() {
             if (dis.Enabled) {
 				var CameraTransformInverse;
@@ -2199,10 +2251,10 @@ var KhawnEngine = function() {
 				var GT = this.Parrent.getGlobalTransform();
 				var Transformz = [];
                 if (dis.isVR) {
-					CameraTransformInverse = [GT.InverseTransform()];
-                    var EyeOffset = new self.Vector3(CameraTransformInverse[0].matrix.value[0]).Scale(-this.IPD);
-                    var Transform0 = new self.transform(CameraTransformInverse[0].traslation.Add(EyeOffset),CameraTransformInverse[0].matrix);
-                    var Transform1 = new self.transform(CameraTransformInverse[0].traslation.Subtract(EyeOffset),CameraTransformInverse[0].matrix);
+                    var EyeOffset = GT.matrix.Multiply(new self.Vector3([0.5,0,0]).Scale(-this.IPD));
+                    var Transform0 = new self.transform(GT.traslation.Add(EyeOffset),GT.matrix).InverseTransform();
+                    var Transform1 = new self.transform(GT.traslation.Subtract(EyeOffset),GT.matrix).InverseTransform();
+					// EyeOffset = GT.matrix.Multiply(EyeOffset);
 					Transformz = [GT.traslation.Add(EyeOffset),GT.traslation.Subtract(EyeOffset)];
                     CameraTransformInverse = [Transform0.ToMatrixTransposed3x4(),Transform1.ToMatrixTransposed3x4()];
 					//CameraTransformInverse = [Transform1.ToMatrixTransposed3x4(),Transform0.ToMatrixTransposed3x4()];
@@ -2229,27 +2281,43 @@ var KhawnEngine = function() {
 					}
 				}
 				//MotionBlurPostProcessingShader
+				self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR_MIPMAP_LINEAR);
+				self.gl.generateMipmap(self.gl.TEXTURE_2D);
 				if (this.PostProcessing) {
-					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
-					
-					self.gl.activeTexture(self.gl.TEXTURE0);
-					self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
-
-					self.gl.activeTexture(self.gl.TEXTURE1);
-					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
-					
-					self.gl.useProgram(self.MotionBlurPostProcessingShader.program);
-					var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).ToQuaternion().Slerp(self.IdentityQuaternion,0.5).ToMatrix().value;
-					// var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).value;
-					self.gl.uniformMatrix3fv(self.MotionBlurPostProcessingShader.Uniforms.uMotionMat.Location,true,x3Mat.flat());
-					//uAspect
-					self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
-					var m = Math.max(this.Resolution[0],this.Resolution[1]);
-					self.gl.uniform2fv(self.MotionBlurPostProcessingShader.Uniforms.uAspect.Location,[this.Resolution[0]/m,this.Resolution[1]/m]);
-					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
-					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					if (false) {
+						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+						self.gl.activeTexture(self.gl.TEXTURE0);
+						self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+						// self.gl.generateMipmap(self.gl.TEXTURE_2D);
+						self.gl.activeTexture(self.gl.TEXTURE1);
+						self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
+						self.gl.useProgram(self.BloomPostProcessingShader.program);
+						self.gl.uniform1i(self.DepthOfFeildProcessingShader.Uniforms.uColorTex, 0);
+						// self.gl.uniform1i(self.DepthOfFeildProcessingShader.Uniforms.uPosTex, 1);
+						// self.gl.uniform1f(self.DepthOfFeildProcessingShader.Uniforms.uFocalDistance.Location, 5);
+						// self.gl.uniform1f(self.DepthOfFeildProcessingShader.Uniforms.uArperture.Location, 100);
+						//{Name:'uFocalDistance',Type:'float'},{Name:'uArperture',Type:'float'}
+						self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+						self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+						self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					} else {
+						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+						self.gl.activeTexture(self.gl.TEXTURE0);
+						self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+						self.gl.activeTexture(self.gl.TEXTURE1);
+						self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
+						self.gl.useProgram(self.MotionBlurPostProcessingShader.program);
+						var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).ToQuaternion().Slerp(self.IdentityQuaternion,0.5).ToMatrix().value;
+						self.gl.uniformMatrix3fv(self.MotionBlurPostProcessingShader.Uniforms.uMotionMat.Location,true,x3Mat.flat());
+						self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+						var m = Math.max(this.Resolution[0],this.Resolution[1]);
+						self.gl.uniform2fv(self.MotionBlurPostProcessingShader.Uniforms.uAspect.Location,[this.Resolution[0]/m,this.Resolution[1]/m]);
+						self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+						self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					}
 				}
-				this.__proto__.PreviousMat = GT.matrix;
+				this.PreviousMat = GT.matrix;
                 dis.ctx.clearRect(0,0,dis.canvas.width,dis.canvas.height);
                 dis.ctx.drawImage(self.canvas,0,0,dis.canvas.width,dis.canvas.height);
             }
@@ -2295,7 +2363,9 @@ var KhawnEngine = function() {
 		this.CubemapFrameBuffer = self.gl.createFramebuffer();
 		this.getData = function() {
 			var p = this.Parrent.getGlobalTransform().traslation;
-			return {Cubemap:this.Cubemap,Position:p};
+			var pl = p.value.slice();
+			pl.push(Math.floor(Math.log2(this.Resolution)))
+			return {Cubemap:this.Cubemap,Position:p,PosLod:pl};
 		}
 		this.Render = function() {
 			if (this.Enabled) {
@@ -2308,7 +2378,7 @@ var KhawnEngine = function() {
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					for (var j=0; j<self.RenderQue.length; j++) {
 						var rp = self.RenderQue[j].ReflectionProbe;
-						self.RenderQue[j].__proto__.ReflectionProbe = [{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}},{Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]}}];
+						self.RenderQue[j].__proto__.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 						self.gl.viewport(0,0,this.Resolution,this.Resolution);
 						self.RenderQue[j].render(CamTranfm,{FeildOfView:59,ClipDistance:0.2},Pos.value);
 						self.RenderQue[j].__proto__.ReflectionProbe = rp;
@@ -2340,98 +2410,313 @@ var KhawnEngine = function() {
 		p1 = p1 || new Engine.Vector3([-0.5,-0.5,-0.5]);
 		this.Min = p0.Min(p1);
 		this.Max = p0.Max(p1);
-        this.RayCast = function(pos,dir,bothsides) {
+		this.RayCastLocal = function(pos,dir,bothsides) {
             if (this.Enabled) {
-				var trsfm = this.Parrent.getGlobalTransform().InverseTransform();
-				var p = trsfm.TransformPoint(pos);
-				var d = trsfm.TransformVector(dir).Inverse();
-				var t0 = this.Min.Subtract(p).Multiply(d);
-				var t1 = this.Max.Subtract(p).Multiply(d);
+				var d = new self.Vector3([1/dir.value[0],1/dir.value[1],1/dir.value[2]]);
+				var t0 = this.Min.Subtract(pos).Multiply(d);
+				var t1 = this.Max.Subtract(pos).Multiply(d);
 				var tn = Math.max(Math.min(t0.value[0],t1.value[0]),Math.min(t0.value[1],t1.value[1]),Math.min(t0.value[2],t1.value[2]));
 				var tx = Math.min(Math.max(t0.value[0],t1.value[0]),Math.max(t0.value[1],t1.value[1]),Math.max(t0.value[2],t1.value[2]));
 				if (tn > tx) {
-					return false;
+					return Infinity;
 				}
 				if (bothsides) {
 					return tn;
 				} else {
 					if (tx < 0) {
-						return false;
+						return Infinity;
 					}
 					return Math.max(tn,0);
 				}
 			} else {
-				return false;
+				return Infinity;
 			}
         }
-		this.IsInside = function(point) {
-			if (this.Enabled) {
+        this.RayCastGlobal = function(pos,dir,bothsides) {
+            if (this.Enabled) {
 				var trsfm = this.Parrent.getGlobalTransform().InverseTransform();
-				var p = trsfm.TransformPoint(point);
+				return this.RayCastLocal(trsfm.TransformPoint(pos),trsfm.TransformVector(dir).Normalize(),bothsides);
+			} else {
+				return Infinity;
+			}
+        }
+		this.getColisionData = function(other) {
+			if (this.Enabled && other.Enabled) {
+				if (other instanceof self.Components.BoxCollider) {
+					var trsfm0 = this.Parrent.getGlobalTransform();
+					var trsfm1 = other.Parrent.getGlobalTransform();
+					var trsfm2 = trsfm1.InverseTransform();
+					var trsfm3 = trsfm0.InverseTransform();
+					var OtherCenter = trsfm3.TransformPoint(trsfm1.TransformPoint(other.Max.Add(other.Min).Scale(0.5)));
+					if (this.isLocalPointInside(OtherCenter)) {
+						return {Coliding:true,GlobalPosition:OtherCenter,UnIntersect:trsfm0.TransformVector(OtherCenter.Normalize().Scale(this.RayCastLocal(new self.Vector3(),OtherCenter.Normalize(),true)))};
+					} else {
+						var closestPoint = null;
+						var closestPointOther = null;
+						var closestPointIdx = 0;
+						var closestPointDist = Infinity;
+						for (var i=0; i<8; i++) {
+							var p0 = this.getVertex(i);
+							// var p1 = trsfm3.TransformPoint(p0);
+							var p1 = trsfm2.TransformPoint(trsfm0.TransformPoint(p0));
+							var dist = other.distenceToLocalPoint(p1);
+							if (dist < closestPointDist) {
+								closestPoint = p0;
+								closestPointDist = dist;
+								closestPointOther = p1;
+								closestPointIdx = i;
+							}
+						}
+						// console.log(closestPoint,closestPointOther,closestPointIdx,closestPointDist);
+						if (closestPointDist <= 0) {
+							var center = other.Max.Add(other.Min).Scale(0.5);
+							var size = other.Max.Subtract(other.Min).Scale(0.5);
+							var poi = closestPointOther.Subtract(center);
+							var mins = size.Subtract(poi.Abs());
+							var min = Math.min(mins.value[0],mins.value[1],mins.value[2]);
+							var isect = new self.Vector3();
+							if (mins.value[0] == min) {
+								isect.value[0] = poi.value[0] > 0 ? min : -min;
+							}
+							if (mins.value[1] == min) {
+								isect.value[1] = poi.value[1] > 0 ? min : -min;
+							}
+							if (mins.value[2] == min) {
+								isect.value[2] = poi.value[2] > 0 ? min : -min;
+							}
+							isect = trsfm1.TransformVector(isect);
+							return {Coliding:true,GlobalPosition:trsfm1.TransformPoint(closestPointOther),UnIntersect:isect};
+						} else {
+							// return {Coliding:false};
+							var isect = [];//new self.Vector3();
+							var pos = [];//new self.Vector3();
+							// var count = 0;
+							var dir = (new self.Vector3([closestPointIdx%2 == 1 ? -1 : 1,0,0]));
+							var dir2 = trsfm2.TransformVector(trsfm0.TransformVector(dir));
+							var dir2len = dir2.Length();
+							dir2.ScaleThisBy(1/dir2len);
+							var max = (this.Max.value[0]-this.Min.value[0])/dir2len;
+							var rc = other.RayCastLocal(closestPointOther,dir2);
+							if (rc <= max) {
+								// return {Coliding:true,GlobalPosition:trsfm0.TransformPoint(closestPoint),LocalPosition:closestPoint,UnIntersect:trsfm0.TransformVector(dir.Scale(rc-max))};
+								pos.push(closestPointOther.Add(dir2.Scale(rc)));
+								isect.push(dir.Scale((max-rc)*dir2len));
+							}
+							dir = (new self.Vector3([0,Math.floor(closestPointIdx/2)%2 == 1 ? -1 : 1,0]));
+							dir2 = trsfm2.TransformVector(trsfm0.TransformVector(dir));
+							dir2len = dir2.Length();
+							dir2.ScaleThisBy(1/dir2len);
+							max = (this.Max.value[1]-this.Min.value[1])/dir2len;
+							rc = other.RayCastLocal(closestPointOther,dir2);
+							if (rc <= max) {
+								// return {Coliding:true,GlobalPosition:trsfm0.TransformPoint(closestPoint),LocalPosition:closestPoint,UnIntersect:trsfm0.TransformVector(dir.Scale(rc-max))};
+								pos.push(closestPointOther.Add(dir2.Scale(rc)));
+								isect.push(dir.Scale((max-rc)*dir2len));
+							}
+							dir = (new self.Vector3([0,0,Math.floor(closestPointIdx/4)%2 == 1 ? -1 : 1]));
+							dir2 = trsfm2.TransformVector(trsfm0.TransformVector(dir));
+							dir2len = dir2.Length();
+							dir2.ScaleThisBy(1/dir2len);
+							max = (this.Max.value[2]-this.Min.value[2])/dir2len;
+							rc = other.RayCastLocal(closestPointOther,dir2);
+							if (rc <= max) {
+								// return {Coliding:true,GlobalPosition:trsfm0.TransformPoint(closestPoint),LocalPosition:closestPoint,UnIntersect:trsfm0.TransformVector(dir.Scale(rc-max))};
+								pos.push(closestPointOther.Add(dir2.Scale(rc)));
+								isect.push(dir.Scale((max-rc)*dir2len));
+							}
+							if (isect.length > 0) {
+								var isct = trsfm0.TransformVector(isect.reduce(function(a,b){return a.Add(b)}));//.ScaleThisBy(1/isect.length));
+								var ps = pos.reduce(function(a,b){return a.Add(b)}).ScaleThisBy(1/pos.length);
+								return {Coliding:true,GlobalPosition:trsfm1.TransformPoint(ps),UnIntersect:isct};
+								// return {Coliding:true,GlobalPosition:trsfm0.TransformPoint(closestPoint),UnIntersect:isct};
+							} else {
+								return {Coliding:false};
+							}
+						}
+					}
+				}
+			} else {
+				return {Coliding:false};
+			}
+		}
+		this.isLocalPointInside = function(point) {
+			if (this.Enabled) {
+				return ((point.value[0] >= this.Min.value[0] && point.value[0] <= this.Max.value[0]) && (point.value[1] >= this.Min.value[1] && point.value[1] <= this.Max.value[1])) && (point.value[2] >= this.Min.value[2] && point.value[2] <= this.Max.value[2]);
+			} else {
+				return false;
+			}
+		}
+		this.isGlobalPointInside = function(point) {
+			if (this.Enabled) {
+				var p = this.Parrent.getGlobalTransform().InverseTransformPoint(point);
 				return ((p.value[0] >= this.Min.value[0] && p.value[0] <= this.Max.value[0]) && (p.value[1] >= this.Min.value[1] && p.value[1] <= this.Max.value[1])) && (p.value[2] >= this.Min.value[2] && p.value[2] <= this.Max.value[2]);
 			} else {
 				return false;
 			}
+		}
+		this.distenceToLocalPoint = function(point) {
+			var dist = point.Subtract(point.Max(this.Min).Min(this.Max)).Length();
+			if (dist <= 0) {
+				var midle = this.Min.Add(this.Max).Scale(0.5);
+				var size = this.Max.Subtract(this.Min).Scale(0.5);
+				var mins = point.Subtract(midle).Abs().Subtract(size);
+				// var mins = size.Subtract(point.Subtract(midle).Abs());
+				return Math.max(mins.value[0],mins.value[1],mins.value[2]);
+			} else {
+				return dist;
+			}
+		}
+		this.distenceToGlobalPoint = function(point) {
+			return this.distenceToLocalPoint(this.Parrent.getGlobalTransform().InverseTransformPoint(point));
+		}
+		this.getVertex = function(idx) {
+			return new self.Vector3([
+				idx%2 == 0 ? this.Min.value[0] : this.Max.value[0],
+				Math.floor(idx/2)%2 == 0 ? this.Min.value[1] : this.Max.value[1],
+				Math.floor(idx/4)%2 == 0 ? this.Min.value[2] : this.Max.value[2]
+			]);
 		}
     }
     this.Components.RigidBody = function() {
         this.Enabled = true;
         this.sides = [];
         this.velocity = new self.Vector3();
-        this.angularVelocity = new self.Vector3([0,0,0.05]);
+        this.angularVelocity = new self.Quaternion();
+		// this.angularVelocity = self.randomQuaternion().SlerpThisBy(self.IdentityQuaternion,0.1);
         this.gravity = new self.Vector3([0,-0.01,0]);
-        this.floorTest = new self.Vector3(0,1,0);
         this.ApplyForceToCenterOfMass = function(force) {
             this.velocity.AddToThis(force);
         }
+		this.PullTo = function(point,force,damp) {
+			var trsfm = this.Parrent.Parrent.getGlobalTransform();
+			var p = trsfm.TransformPoint(this.Parrent.transform.traslation);
+			this.velocity.AddToThis(trsfm.InverseTransformPoint(point.Subtract(p)).Scale(force)).ScaleThisBy(damp);
+		}
         this.Drag = function(d) {
             this.velocity.ScaleThisBy(d);
+			this.angularVelocity = self.IdentityQuaternion.Slerp(this.angularVelocity,d);
         }
+		this.getLocalVelocityAtPoint = function(point) {
+			var v = new self.Vector3([this.angularVelocity.value[0],this.angularVelocity.value[1],this.angularVelocity.value[2]]);
+			return point.Cross(v).Add(this.velocity);
+		}
+		this.getGlobalVelocityAtPoint = function(point) {
+			var gt = this.Parrent.getGlobalTransform();
+			return gt.TransformVector(this.getLocalVelocityAtPoint(gt.InverseTransformPoint(point)));
+		}
+		this.calculateContactForce = function(LocalPosition,LocalForce) {
+			var Force = this.Parrent.transform.matrix.Multiply(LocalPosition.Scale(LocalForce.Dot(LocalPosition)/LocalPosition.LengthSquared()));
+			if (isNaN(Force.value[0]) || isNaN(Force.value[1]) || isNaN(Force.value[2])) {
+				Force = new self.Vector3();
+			}
+			// var Force = this.Parrent.transform.matrix.Multiply(LocalPosition.Normalize().Scale(LocalForce.Dot(LocalPosition.Normalize())));
+			// var Force = this.Parrent.transform.matrix.Multiply(LocalForce.Scale(LocalForce.Normalize().Dot(LocalPosition.Normalize())));
+			var Torqe = self.lookAtRotation(LocalPosition,LocalPosition.Add(LocalForce));
+			return {Torqe:Torqe,Force:Force};
+		}
         this.Update = function() {
             if (this.Enabled) {
-                this.velocity.AddToThis(this.gravity);
-                var thisGlobalTransform = this.Parrent.getGlobalTransform();
-                var unIntersect = new self.Vector3();
-                var spin = new self.Vector3();
-                var push = new self.Vector3();
-                var intersectionCount = 0;
-				this.Parrent.transform.traslation.AddToThis(this.velocity);
-                this.Parrent.transform.matrix.PhysxRotate(this.angularVelocity);
-                for (var i=0; i<this.Parrent.Components.length; i++) {
-                    if (this.Parrent.Components[i] instanceof self.Components.MeshCollider) {
-                        var dta = this.Parrent.Components[i].MeshData;
-                        for (var j=0; j<dta.length; j++) {
-                            for (var k=0; k<dta[j].Vertices.length; k++) {
-                                var p = new self.Vector3(dta[j].Vertices[k]);
-                                var p1 = thisGlobalTransform.TransformPoint(p);
-                                var p2 = p1.Subtract(thisGlobalTransform.traslation);
-								//var p2 = thisGlobalTransform.TransformVector(p);
-                                var d = p1.Dot(this.floorTest);
-                                if (d < 0) {
-                                    spin.AddToThis(this.velocity.Cross(p2));
-									//spin.AddToThis(this.floorTest.Cross(p2));
-                                    push.AddToThis(this.angularVelocity.Cross(p2));
-                                    unIntersect.AddToThis(this.floorTest.Scale(d));
-                                    intersectionCount++;
-                                }
-                            }
-                        }
-                    }
-                }
-                if (intersectionCount > 0) {
-                    unIntersect.ScaleThisBy(-1/intersectionCount);
-                    this.Parrent.transform.traslation.AddToThis(unIntersect);
-                    spin.ScaleThisBy(0.5/intersectionCount);
-                    push.ScaleThisBy(-1/intersectionCount);
-                    //this.velocity.AddToThis(push);
-                    this.velocity.ScaleThisBy(0);
-					
-					//this.velocity = push;
-					
-					//this.angularVelocity.ScaleThisBy(0);
-                    this.angularVelocity.AddToThis(spin);
-                }
-            }
+				// for (var q=0; q<2; q++) {
+					this.velocity.AddToThis(this.gravity);
+					var thisParrentGlobalTransform = this.Parrent.Parrent.getGlobalTransform();
+					var thisGlobalTransform = thisParrentGlobalTransform.TransformTransform(this.Parrent.transform);
+					var thisInverseGlobalTransform = thisGlobalTransform.InverseTransform();
+					var thisParrentInverseGlobalTransform = thisParrentGlobalTransform.InverseTransform();
+					var unIntersect = new self.Vector3();
+					var unIntersectMax = 0;
+					var Torqe = new self.Quaternion();
+					var Force = new self.Vector3();
+					var Count = 0;
+					// this.Parrent.transform.traslation.AddToThis(this.velocity.Scale(0.1));
+					// this.Parrent.transform.matrix.MultiplyThisBy(self.IdentityQuaternion.Slerp(this.angularVelocity,0.1).ToMatrix());
+					this.Parrent.transform.traslation.AddToThis(this.velocity);
+					this.Parrent.transform.matrix.MultiplyThisBy(this.angularVelocity.ToMatrix());
+					var selfColiders = [];
+					for (var i=0; i<this.Parrent.Components.length; i++) {
+						if (this.Parrent.Components[i] instanceof self.Components.BoxCollider) {
+							selfColiders.push(this.Parrent.Components[i]);
+						}
+					}
+					var dis = this;
+					function checkCollisions(obj) {
+						var isRidgidBody = false;
+						for (var i=0; i<obj.Components.length; i++) {
+							if (obj.Components[i] instanceof self.Components.RigidBody) {
+								isRidgidBody = obj.Components[i];
+								break;
+							}
+						}
+						for (var i=0; i<obj.Components.length; i++) {
+							if (obj.Components[i] instanceof self.Components.BoxCollider) {
+								for (var j=0; j<selfColiders.length; j++) {
+									//var data = obj.Components[i].getColisionData(selfColiders[j]);
+									var data = selfColiders[j].getColisionData(obj.Components[i]);
+									if (data.Coliding) {
+										var p1 = thisParrentInverseGlobalTransform.TransformVector(data.GlobalPosition);
+										var p2 = thisInverseGlobalTransform.TransformPoint(data.GlobalPosition);
+										if (!isRidgidBody) {
+											// var p0 = dis.Parrent.transform.TransformVector(thisInverseGlobalTransform.TransformVector(data.UnIntersect));
+											var p0 = thisParrentInverseGlobalTransform.TransformVector(data.UnIntersect);
+											unIntersect.AddToThis(p0.Flatten(unIntersect.Normalize()));
+											// var l = p0.LengthSquared();
+											// if (l > unIntersectMax) {
+											// 	unIntersect = p0;
+											// 	unIntersectMax = l;
+											// }
+										}
+										if (isRidgidBody) {
+											var Vol = thisInverseGlobalTransform.TransformVector(isRidgidBody.getGlobalVelocityAtPoint(data.GlobalPosition)).Subtract(dis.getLocalVelocityAtPoint(p2));
+										} else {
+											var Vol = dis.getLocalVelocityAtPoint(p2);
+										}
+										// var F = dis.getLocalVelocityAtPoint(p2).Scale(-0.5);
+										// F = thisInverseGlobalTransform.TransformVector(data.UnIntersect).Flatten(F.Normalize());
+										// F = thisInverseGlobalTransform.TransformVector(data.UnIntersect).Normalize().Scale(F.Length());
+										// F = thisInverseGlobalTransform.TransformVector(data.UnIntersect).Subtract(F).Scale(0.2);
+										var F = thisInverseGlobalTransform.TransformVector(data.UnIntersect);
+										if (Vol.Length() < F.Length()) {
+											F.NormalizeThis().ScaleThisBy(Vol.Length());
+										}
+										// if (isRidgidBody) {
+										// 	var F = thisInverseGlobalTransform.TransformVector(isRidgidBody.getGlobalVelocityAtPoint(data.GlobalPosition)).Subtract(dis.getLocalVelocityAtPoint(p2)).Scale(0.05);
+										// } else {
+										// 	var F = dis.getLocalVelocityAtPoint(p2).Scale(-0.05);
+										// }
+										// F.AddToThis(thisInverseGlobalTransform.TransformVector(data.UnIntersect).Scale(isRidgidBody ? 0.5 : 1));
+										var calced = dis.calculateContactForce(p2,F);
+										Torqe.MultiplyThis(calced.Torqe);
+										Force.AddToThis(calced.Force);
+										Count++;
+									}
+								}
+							}
+						}
+						for (var i=0; i<obj.Children.length; i++) {
+							if (obj.Children[i] != dis.Parrent) {
+								checkCollisions(obj.Children[i]);
+							}
+						}
+					}
+					checkCollisions(self.Root);
+					Torqe.SlerpThisBy(self.IdentityQuaternion,1-(1/Count));
+					Force.ScaleThisBy(1/Count);
+					// unIntersect.ScaleThisBy(1/Count);
+					if (Count > 0) {
+						// this.angularVelocity.MultiplyThis(Torqe.Multiply(self.IdentityQuaternion.Slerp(this.angularVelocity.Conjugate(),0.25)));
+						// this.velocity.AddToThis(Force.Subtract(this.velocity.Scale(0.25)));
+						// this.velocity.AddToThis(Force.Add(unIntersect));
+						this.angularVelocity.MultiplyThis(Torqe);
+						this.velocity.AddToThis(Force);
+						// this.angularVelocity = Torqe;
+						// this.velocity = Force;
+						//this.Drag(Count > 3 ? 0.6 : 0.8);
+						// this.Drag(-1);
+						this.Parrent.transform.traslation.AddToThis(unIntersect);
+						// this.Parrent.transform.traslation.AddToThis(unIntersect);
+					}
+				// }
+				this.Drag(0.9);
+			}
         }
     }
 	this.Components.DynamicBone = function(stiff,frict,damp) {
@@ -2470,6 +2755,15 @@ var KhawnEngine = function() {
 				}
 				this.Parrent.setMatrix(this.Default.Multiply(this.Offset).ToMatrix());
 				this.Prev = t1;
+			}
+		}
+	}
+	this.Components.CopyGlobalTransform = function(obj) {
+		this.Enabled = true;
+		this.Scorce = obj;
+		this.Update = function() {
+			if (this.Enabled) {
+				this.Parrent.transform = this.Parrent.Parrent.getGlobalTransform().InverseTransformTransform(this.Scorce.getGlobalTransform());
 			}
 		}
 	}
@@ -2518,7 +2812,7 @@ var KhawnEngine = function() {
                         Chain[j].setMatrix(m);
 					}
 				}
-				Chain[0].setMatrix(Chain[1].getGlobalTransform().matrix.Inverse().Multiply(GoalGlobalTransform.matrix));
+				Chain[0].setMatrix(Chain[1].getGlobalTransform().matrix.Inverse().Multiply(GoalGlobalTransform.matrix.SetScale(1)));
             }
         }
     }
@@ -2761,7 +3055,7 @@ var KhawnEngine = function() {
             this.value = [0,0,0];
         }
         // console.log(this.value);
-        this.Set = function(a,b,c) {
+        this.__proto__.Set = function(a,b,c) {
             if (b) {
                 this.value = [a,b,c];
             } else {
@@ -2776,10 +3070,13 @@ var KhawnEngine = function() {
                 }
             }
         }
-        this.Add = function(v) {
+        this.__proto__.Add = function(v) {
             return new self.Vector3([this.value[0]+v.value[0],this.value[1]+v.value[1],this.value[2]+v.value[2]]);
         }
-        this.AddToThis = function(v) {
+		this.__proto__.Abs = function() {
+            return new self.Vector3([Math.abs(this.value[0]),Math.abs(this.value[1]),Math.abs(this.value[2])]);
+        }
+        this.__proto__.AddToThis = function(v) {
             if (v instanceof self.Vector3) {
                 this.value[0] += v.value[0];
                 this.value[1] += v.value[1];
@@ -2791,62 +3088,62 @@ var KhawnEngine = function() {
             }
             return this;
         }
-        this.Subtract = function(v) {
+        this.__proto__.Subtract = function(v) {
             return new self.Vector3([this.value[0]-v.value[0],this.value[1]-v.value[1],this.value[2]-v.value[2]]);
         }
-        this.SubtractFrom = function(v) {
+        this.__proto__.SubtractFrom = function(v) {
             return new self.Vector3([v.value[0]-this.value[0],v.value[1]-this.value[1],v.value[2]-this.value[2]]);
         }
-        this.SubtractThisBy = function(v) {
+        this.__proto__.SubtractThisBy = function(v) {
             this.value[0] -= v.value[0];
             this.value[1] -= v.value[1];
             this.value[2] -= v.value[2];
             return this;
         }
-        this.Multiply = function(v) {
+        this.__proto__.Multiply = function(v) {
             if (v instanceof self.Vector3) {
                 return new self.Vector3([this.value[0]*v.value[0],this.value[1]*v.value[1],this.value[2]*v.value[2]]);
             } else {
                 return new self.Vector3([this.value[0]*v,this.value[1]*v,this.value[2]*v]);
             }
         }
-        this.MultiplyThisBy = function(v) {
+        this.__proto__.MultiplyThisBy = function(v) {
             this.value[0] *= v.value[0];
             this.value[1] *= v.value[1];
             this.value[2] *= v.value[2];
             return this;
         }
-        this.Lerp = function(v,t) {
+        this.__proto__.Lerp = function(v,t) {
             return new self.Vector3([this.value[0]+(v.value[0]-this.value[0])*t,this.value[1]+(v.value[1]-this.value[1])*t,this.value[2]+(v.value[2]-this.value[2])*t]);
         }
-        this.LerpThisBy = function(v,t) {
+        this.__proto__.LerpThisBy = function(v,t) {
             this.value[0] += (v.value[0]-this.value[0])*t;
             this.value[1] += (v.value[1]-this.value[1])*t;
             this.value[2] += (v.value[2]-this.value[2])*t;
             return this;
         }
-        this.Scale = function(s) {
+        this.__proto__.Scale = function(s) {
             return new self.Vector3([this.value[0]*s,this.value[1]*s,this.value[2]*s]);
         }
-        this.ScaleThisBy = function(s) {
+        this.__proto__.ScaleThisBy = function(s) {
             this.value[0] *= s;
             this.value[1] *= s;
             this.value[2] *= s;
             return this;
         }
-        this.Flatten = function(v) {
+        this.__proto__.Flatten = function(v) {
             //return v.Scale(v.Dot(this));
 			var d = this.Dot(v);
 			return this.Subtract(v.Scale(d));
         }
-        this.Divide = function(v) {
+        this.__proto__.Divide = function(v) {
             if (v instanceof self.Vector3) {
                 return new self.Vector3([this.value[0]/v.value[0],this.value[1]/v.value[1],this.value[2]/v.value[2]]);
             } else {
                 return new self.Vector3([this.value[0]/v,this.value[1]/v,this.value[2]/v]);
             }
         }
-        this.DivideThisBy = function(v) {
+        this.__proto__.DivideThisBy = function(v) {
             if (v instanceof self.Vector3) {
                 this.value[0] /= v.value[0];
                 this.value[1] /= v.value[1];
@@ -2858,33 +3155,33 @@ var KhawnEngine = function() {
             }
             return this;
         }
-        this.DivideByThis = function(v) {
+        this.__proto__.DivideByThis = function(v) {
             this.value = [v.value[0]/this.value[0],v.value[1]/this.value[1],v.value[2]/this.value[2]];
             return this;
         }
-        this.DivideFrom = function(v) {
+        this.__proto__.DivideFrom = function(v) {
             return new self.Vector3([v.value[0]/this.value[0],v.value[1]/this.value[1],v.value[2]/this.value[2]]);
         }
-        this.Dot = function(v) {
+        this.__proto__.Dot = function(v) {
             return (this.value[0]*v.value[0])+(this.value[1]*v.value[1])+(this.value[2]*v.value[2]);
         }
-        this.Cross = function(v) {
+        this.__proto__.Cross = function(v) {
             return new self.Vector3([(this.value[1]*v.value[2])-(this.value[2]*v.value[1]),(this.value[2]*v.value[0])-(this.value[0]*v.value[2]),(this.value[0]*v.value[1])-(this.value[1]*v.value[0])]);
         }
-        this.Length = function() {
+        this.__proto__.Length = function() {
             return Math.hypot(this.value[0],this.value[1],this.value[2]);
         }
-        this.LengthSquared = function() {
+        this.__proto__.LengthSquared = function() {
             return (this.value[0]*this.value[0])+(this.value[1]*this.value[1])+(this.value[2]*this.value[2]);
         }
-        this.DistenceTo = function(v) {
+        this.__proto__.DistenceTo = function(v) {
             if (v instanceof self.Vector3) {
                 return Math.hypot(this.value[0]-v.value[0],this.value[1]-v.value[1],this.value[2]-v.value[2]);
             } else {
                 return Math.hypot(this.value[0]-v[0],this.value[1]-v[1],this.value[2]-v[2]);
             }
         }
-        this.DistenceSquaredTo = function(v) {
+        this.__proto__.DistenceSquaredTo = function(v) {
             if (v instanceof self.Vector3) {
                 var v0 = this.value[0]-v.value[0];
                 var v1 = this.value[1]-v.value[1];
@@ -2897,33 +3194,33 @@ var KhawnEngine = function() {
                 return (v0*v0)+(v1*v1)+(v2*v2);
             }
         }
-        this.Oposite = function() {
+        this.__proto__.Oposite = function() {
             return new self.Vector3([-this.value[0],-this.value[1],-this.value[2]]);
         }
-		this.OpositeThis = function() {
+		this.__proto__.OpositeThis = function() {
             this.value = [-this.value[0],-this.value[1],-this.value[2]];
 			return this;
         }
-        this.InverseLength = function() {
+        this.__proto__.InverseLength = function() {
             return this.Scale(1/this.Dot(this));
         }
-		this.Inverse = function() {
+		this.__proto__.Inverse = function() {
             return new self.Vector3([1/this.value[0],1/this.value[1],1/this.value[2]]);
         }
-        this.Normalize = function() {
-            var l = Math.hypot(this.value[0],this.value[1],this.value[2]);
+        this.__proto__.Normalize = function() {
+            var l = Math.max(Math.hypot(this.value[0],this.value[1],this.value[2]),Number.EPSILON);
             return new self.Vector3([this.value[0]/l,this.value[1]/l,this.value[2]/l]);
         }
-		this.Min = function(v) {
+		this.__proto__.Min = function(v) {
 			return new self.Vector3([Math.min(this.value[0],v.value[0]),Math.min(this.value[1],v.value[1]),Math.min(this.value[2],v.value[2])]);
 		}
-		this.Max = function(v) {
+		this.__proto__.Max = function(v) {
 			return new self.Vector3([Math.max(this.value[0],v.value[0]),Math.max(this.value[1],v.value[1]),Math.max(this.value[2],v.value[2])]);
 		}
-        this.ToArray = function() {
+        this.__proto__.ToArray = function() {
             return this.value;
         }
-        this.NormalizeThis = function() {
+        this.__proto__.NormalizeThis = function() {
             var l = Math.hypot(this.value[0],this.value[1],this.value[2]);
             this.value = [this.value[0]/l,this.value[1]/l,this.value[2]/l];
             return this;
@@ -2993,6 +3290,7 @@ var KhawnEngine = function() {
 				}
 			} else {
 				this.value = a;
+				// this.value = [a[1],a[2],a[3],a[0]];
 			}
         } else {
             this.value = [0,0,0,1];
@@ -3125,6 +3423,10 @@ var KhawnEngine = function() {
 			}
 			return this.Weight(q,a,b).Scale(1/div);
         }
+		this.SlerpThisBy = function(q,t) {
+			this.value = this.Slerp(q,t).value;
+			return this;
+		}
     }
     this.lookAtRotation = function(a,v) {
         var d = a.Normalize();
