@@ -19,9 +19,14 @@ var KhawnEngine = function() {
 	this.RtoD = 180/Math.PI;
 	this.DtoR = Math.PI/180;
 	this.Tau = 2*Math.PI;
+	this.TextDecoder = new TextDecoder();
+	this.TextEncoder = new TextEncoder();
+	this.TextureReadRenderBuffer = self.gl.createFramebuffer();
     this.Texture = function(data,dims) {
         var texture = self.gl.createTexture();
 		this.Image = null;
+		this.type = 0;
+		this.channels = dims;
         self.gl.bindTexture(self.gl.TEXTURE_2D, texture);
 		if (data instanceof Image || data instanceof HTMLCanvasElement) {
 			self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA, self.gl.RGBA, self.gl.UNSIGNED_BYTE, data);
@@ -33,6 +38,8 @@ var KhawnEngine = function() {
 			this.height = data.height;
 			this.width = data.width;
 			this.Image = data;
+			this.type = 0;
+			this.channels = 4;
 		} else if (data instanceof Float32Array) {
 			var res = self.calculateMostEfficientTextureSize(data.length/dims);
 			var a = [self.gl.RED,self.gl.RG,self.gl.RGB,self.gl.RGBA][dims-1];
@@ -45,6 +52,7 @@ var KhawnEngine = function() {
 			this.texture = texture;
 			this.height = res[1];
 			this.width = res[0];
+			this.type = 1;
 		} else if (data instanceof Int32Array) {
 			var res = self.calculateMostEfficientTextureSize(data.length/dims);
 			var a = [self.gl.RED_INTEGER,self.gl.RG_INTEGER,self.gl.RGB_INTEGER,self.gl.RGBA_INTEGER][dims-1];
@@ -57,6 +65,41 @@ var KhawnEngine = function() {
 			this.texture = texture;
 			this.height = res[1];
 			this.width = res[0];
+			this.type = 2;
+		}
+		this.__proto__.toArrayBuffer = function() {
+			var arr = [];
+			arr.push(self.TextEncoder.encode("Texture\x01"));
+			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, self.TextureReadRenderBuffer);
+			self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0,self.gl.TEXTURE_2D, this.texture, 0);
+			self.gl.readBuffer(self.gl.COLOR_ATTACHMENT0);
+			if (this.type === 0) {
+				var bfr = new Uint8Array(this.channels*this.width*this.height);
+				self.gl.readPixels(0,0,this.width,this.height,self.gl.RGBA,self.gl.UNSIGNED_BYTE,bfr);
+			} else if (this.type === 1) {
+				var bfr = new Float32Array(this.channels*this.width*this.height);
+				self.gl.readPixels(0,0,this.width,this.height,[self.gl.RED,self.gl.RG,self.gl.RGB,self.gl.RGBA][this.channels-1],self.gl.FLOAT,bfr);
+			} else if (this.type === 2) {
+				var bfr = new Int32Array(this.channels*this.width*this.height);
+				self.gl.readPixels(0,0,this.width,this.height,[self.gl.RED_INTEGER,self.gl.RG_INTEGER,self.gl.RGB_INTEGER,self.gl.RGBA_INTEGER][this.channels-1],self.gl.INT,bfr);
+			} else {
+				var bfr = new Uint8Array(0);
+			}
+			bfr = pako.gzip(new Uint8Array(bfr.buffer));
+			arr.push(new Uint8Array(new Uint32Array([bfr.buffer.byteLength,[6,4,5][this.type]]).buffer));
+			arr.push(bfr);
+			var length = 0;
+			for (var i=0; i<arr.length; i++) {
+				length += arr[i].length;
+			}
+			arr[1].set(new Uint8Array(new Uint32Array([length-(arr[0].length+arr[1].length)]).buffer));
+			var bufr = new Uint8Array(length);
+			var idx = 0;
+			for (var i=0; i<arr.length; i++) {
+				bufr.set(arr[i],idx);
+				idx += arr[i].length;
+			}
+			return bufr;
 		}
     }
     this.VertexShader = function(source) {
@@ -138,6 +181,35 @@ var KhawnEngine = function() {
         }
         this.VertexDataIndexs = self.gl.getAttribLocation(this.program, 'aVertexDataIndexs');
 		self.gl.enableVertexAttribArray(this.VertexDataIndexs);
+		this.__proto__.toArrayBuffer = function() {
+			var arr = [];
+			arr.push(self.TextEncoder.encode("Shader\x00"));
+			arr.push(new Uint8Array(8));
+			if (this.vs) {
+				arr.push(self.TextEncoder.encode("vs\x01"));
+				var b = self.TextEncoder.encode(this.vs.source);
+				arr.push(new Uint8Array(new Uint32Array([b.buffer.byteLength,2]).buffer));
+				arr.push(b);
+			}
+			if (this.VertexDataIndexBuffer) {
+				arr.push(self.TextEncoder.encode("fs\x01"));
+				var b = self.TextEncoder.encode(this.fs.source);
+				arr.push(new Uint8Array(new Uint32Array([b.buffer.byteLength,2]).buffer));
+				arr.push(b);
+			}
+			var length = 0;
+			for (var i=0; i<arr.length; i++) {
+				length += arr[i].length;
+			}
+			arr[1].set(new Uint8Array(new Uint32Array([length-(arr[0].length+arr[1].length)]).buffer));
+			var bufr = new Uint8Array(length);
+			var idx = 0;
+			for (var i=0; i<arr.length; i++) {
+				bufr.set(arr[i],idx);
+				idx += arr[i].length;
+			}
+			return bufr;
+		}
     }
 	this.VertexMapingVertexShader = new self.VertexShader(`#version 300 es
 		const highp vec4 p[4] = vec4[4](vec4(1.0,1.0,0.0,1.0),vec4(-1.0,1.0,0.0,1.0),vec4(1.0,-1.0,0.0,1.0),vec4(-1.0,-1.0,0.0,1.0));
@@ -417,27 +489,37 @@ var KhawnEngine = function() {
 		this.VertexUVPositions = [];
 		this.VertexNormalDirections = [];
 		this.IndexBuffers = [];
+		this.VertexPositionBuffer = null;
+		this.VertexDataIndexBuffer = null;
+		this.VertexUVPositionBuffer = null;
+		this.VertexNormalBuffer = null;
 		this.l = [];
 		//mshDta.push({VertexPositions:VertexPositions,VertexNormals:VertexNormals,VertexDataIndexs:VertexDataIndexs,VertexUVs:newUVs,Indices:newIndcs,Weights:newWeights,WeightIndices:newWeightIndices});
 		//this.VertexRenderBuffers = self.gl.createFramebuffer();
 		//this.VertexPositionTextures = mesh.VertexPositions.map(function(t){return new self.Texture(new Float32Array(t.height*t.width*3),3)});
 		if (this.MeshData.VertexPositions[0] instanceof Float64Array) {
-			var VB = new self.Texture(new Float32Array(new Float64Array(this.MeshData.VertexPositions[0].buffer)),3);
+			this.VertexPositionBuffer = new Float32Array(new Float64Array(this.MeshData.VertexPositions[0].buffer));
+			var VB = new self.Texture(this.VertexPositionBuffer,3);
 		} else {
 			if (this.MeshData.VertexPositions[0] instanceof Float32Array) {
-				var VB = new self.Texture(new Float32Array(this.MeshData.VertexPositions[0].buffer),3);
+				this.VertexPositionBuffer = new Float32Array(this.MeshData.VertexPositions[0].buffer);
+				var VB = new self.Texture(this.VertexPositionBuffer,3);
 			} else {
-				var VB = new self.Texture(new Float32Array(this.MeshData.VertexPositions.flat()),3)
+				this.VertexPositionBuffer = new Float32Array(this.MeshData.VertexPositions.flat());
+				var VB = new self.Texture(this.VertexPositionBuffer,3);
 			}
 		}
 		if (this.MeshData.VertexUVs) {
 			if (this.MeshData.VertexUVs[0] instanceof Float64Array) {
-				var UV = new self.Texture(new Float32Array(new Float64Array(this.MeshData.VertexUVs[0].buffer)),2);
+				this.VertexUVPositionBuffers = new Float32Array(new Float64Array(this.MeshData.VertexUVs[0].buffer));
+				var UV = new self.Texture(this.VertexUVPositionBuffers,2);
 			} else {
 				if (this.MeshData.VertexUVs[0] instanceof Float32Array) {
-					var UV = new self.Texture(new Float32Array(this.MeshData.VertexUVs[0].buffer),2);
+					this.VertexUVPositionBuffers = new Float32Array(this.MeshData.VertexUVs[0].buffer);
+					var UV = new self.Texture(this.VertexUVPositionBuffers,2);
 				} else {
-					var UV = new self.Texture(new Float32Array(this.MeshData.VertexUVs.flat()),2);
+					this.VertexUVPositionBuffers = new Float32Array(this.MeshData.VertexUVs.flat());
+					var UV = new self.Texture(this.VertexUVPositionBuffers,2);
 				}
 			}
 		} else {
@@ -445,12 +527,15 @@ var KhawnEngine = function() {
 		}
 		if (this.MeshData.VertexNormals) {
 			if (this.MeshData.VertexNormals[0] instanceof Float64Array) {
-				var NB = new self.Texture(new Float32Array(new Float64Array(this.MeshData.VertexNormals[0].buffer)),this.MeshData.VertexNormals[0].length);
+				this.VertexNormalBuffer = new Float32Array(new Float64Array(this.MeshData.VertexNormals[0].buffer));
+				var NB = new self.Texture(this.VertexNormalBuffer,this.MeshData.VertexNormals[0].length);
 			} else {
 				if (this.MeshData.VertexNormals[0] instanceof Float32Array) {
-					var NB = new self.Texture(new Float32Array(this.MeshData.VertexNormals[0].buffer),this.MeshData.VertexNormals[0].length);
+					this.VertexNormalBuffer = new Float32Array(this.MeshData.VertexNormals[0].buffer);
+					var NB = new self.Texture(this.VertexNormalBuffer,this.MeshData.VertexNormals[0].length);
 				} else {
-					var NB = new self.Texture(new Float32Array(this.MeshData.VertexNormals.flat()),this.MeshData.VertexNormals[0].length);
+					this.VertexNormalBuffer = new Float32Array(this.MeshData.VertexNormals.flat());
+					var NB = new self.Texture(this.VertexNormalBuffer,this.MeshData.VertexNormals[0].length);
 				}
 			}
 		} else {
@@ -460,13 +545,15 @@ var KhawnEngine = function() {
 		self.gl.bindBuffer(self.gl.ARRAY_BUFFER, VIB);
 		if (this.MeshData.VertexDataIndexs) {
 			if (this.MeshData.VertexDataIndexs[0] instanceof Int32Array) {
-				self.gl.bufferData(self.gl.ARRAY_BUFFER, new Int32Array(this.MeshData.VertexDataIndexs[0].buffer), self.gl.STATIC_DRAW);
+				this.VertexDataIndexBuffer = new Int32Array(this.MeshData.VertexDataIndexs[0].buffer);
+				self.gl.bufferData(self.gl.ARRAY_BUFFER, this.VertexDataIndexBuffer, self.gl.STATIC_DRAW);
 			} else {
-				self.gl.bufferData(self.gl.ARRAY_BUFFER, new Int32Array(this.MeshData.VertexDataIndexs.flat()), self.gl.STATIC_DRAW);
+				this.VertexDataIndexBuffer = new Int32Array(this.MeshData.VertexDataIndexs.flat());
+				self.gl.bufferData(self.gl.ARRAY_BUFFER, this.VertexDataIndexBuffer, self.gl.STATIC_DRAW);
 			}
 		} else {
-			var arr = new Int32Array(this.MeshData.VertexPositions.length*3).map(function(dc,i){return i%3 == 0 ? Math.floor(i/3) : 0});
-			self.gl.bufferData(self.gl.ARRAY_BUFFER, arr, self.gl.STATIC_DRAW);
+			this.VertexDataIndexBuffer = new Int32Array(this.MeshData.VertexPositions.length*3).map(function(dc,i){return i%3 == 0 ? Math.floor(i/3) : 0});
+			self.gl.bufferData(self.gl.ARRAY_BUFFER, this.VertexDataIndexBuffer, self.gl.STATIC_DRAW);
 		}
 		this.VertexPositions = VB;
 		this.VertexDataIndexs = VIB;
@@ -488,6 +575,48 @@ var KhawnEngine = function() {
 			this.IndexBuffers.push(IB);
 			this.l.push(this.MeshData.Indices[i].length*3);
         }
+		this.__proto__.toArrayBuffer = function() {
+			var arr = [];
+			arr.push(self.TextEncoder.encode("Mesh\x00"));
+			arr.push(new Uint8Array(8));
+			if (this.VertexPositionBuffer) {
+				arr.push(self.TextEncoder.encode("VertexPositions\x01"));
+				arr.push(new Uint8Array(new Uint32Array([this.VertexPositionBuffer.buffer.byteLength,0]).buffer));
+				arr.push(new Uint8Array(this.VertexPositionBuffer.buffer));
+			}
+			if (this.VertexDataIndexBuffer) {
+				arr.push(self.TextEncoder.encode("VertexDataIndexs\x01"));
+				arr.push(new Uint8Array(new Uint32Array([this.VertexDataIndexBuffer.buffer.byteLength,0]).buffer));
+				arr.push(new Uint8Array(this.VertexDataIndexBuffer.buffer));
+			}
+			if (this.VertexUVPositionBuffer) {
+				arr.push(self.TextEncoder.encode("VertexUVPositions\x01"));
+				arr.push(new Uint8Array(new Uint32Array([this.VertexUVPositionBuffer.buffer.byteLength,0]).buffer));
+				arr.push(new Uint8Array(this.VertexUVPositionBuffer.buffer));
+			}
+			if (this.VertexNormalBuffer) {
+				arr.push(self.TextEncoder.encode("VertexNormalDirections\x01"));
+				arr.push(new Uint8Array(new Uint32Array([this.VertexNormalBuffer.buffer.byteLength,0]).buffer));
+				arr.push(new Uint8Array(this.VertexNormalBuffer.buffer));
+			}
+			var length = 0;
+			for (var i=0; i<arr.length; i++) {
+				length += arr[i].length;
+			}
+			arr[1].set(new Uint8Array(new Uint32Array([length-(arr[0].length+arr[1].length)]).buffer));
+			var bufr = new Uint8Array(length);
+			var idx = 0;
+			for (var i=0; i<arr.length; i++) {
+				bufr.set(arr[i],idx);
+				idx += arr[i].length;
+			}
+			return bufr;
+			//this.VertexPositionBuffer = null;
+			//this.VertexDataIndexBuffer = null;
+			//this.VertexUVPositionBuffer = null;
+			//this.VertexNormalBuffer = null;
+			
+		}
 		//this.IndicesTexture = new self.Texture(new Int32Array(AllIndices.flat()),3);
     }
     this.SkinnedMesh = function(MeshData,Pose,Bones) {
@@ -1086,8 +1215,7 @@ var KhawnEngine = function() {
 		this.parsed = {};
 		this.decoded = {};
 		this.parse = function(OBJdata) {
-			var TxtDcdr = new TextDecoder();
-			OBJdata = TxtDcdr.decode(OBJdata).split("\n");
+			OBJdata = self.TextDecoder.decode(OBJdata).split("\n");
 			for (var i=0; i<OBJdata.length; i++) {
 				OBJdata[i] = OBJdata[i].replaceAll("  "," ").replaceAll("  "," ").replaceAll("  "," ");
 				if (!OBJdata[i]) {
@@ -1343,13 +1471,15 @@ var KhawnEngine = function() {
     this.DebugShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
         layout(location = 0) out highp vec4 color;
 		layout(location = 1) out highp vec4 position;
-		in highp vec3 CameraSpacePosition;
+		in highp vec3 PositionToCamera;
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
         void main(void) {
-			position = vec4(WorldPosition,CameraSpacePosition.z);
+			//position = vec4(WorldPosition,CameraSpacePosition.z);
 			//color = vec4(mod(WorldPosition,vec3(1)),1);
-			color = vec4(abs(Normal),1);
+			//color = vec4(abs(Normal),1);
+			color = vec4((Normal+1.0)*0.5,1);
+			//color = vec4((normalize(PositionToCamera)+1.0)*0.5,1);
         }
     `),[]);
     this.DefaultShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
@@ -1371,6 +1501,7 @@ var KhawnEngine = function() {
 		in highp vec3 Normal;
 		in highp vec2 UV;
 		const highp float Infinity = 1.0/0.0;
+		highp ivec4 ReflectionResolutions;
 		highp vec3 fastNormalize(highp vec3 vect) {
 			vect = mix(vect,vect/dot(vect,vect),0.8);
 			vect = mix(vect,vect/dot(vect,vect),0.7);
@@ -1383,7 +1514,7 @@ var KhawnEngine = function() {
 			bool hit;
 			highp float dist = Infinity;
 			highp float dtmp = Infinity;
-			for (highp float i=0.02; i<1.0; i+=0.02) {
+			for (highp float i=0.025; i<1.0; i+=0.025) {
 				p = pos-(dir*i/(1.0-i));
 				v = abs(uReflectionPosition[0].xyz-p);
 				hit = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
@@ -1424,24 +1555,24 @@ var KhawnEngine = function() {
 			highp float s2 = texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w;
 			highp float s3 = texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w;
 			highp vec3 result;
-			rough = log2(rough*(dist*rough+1.0)+1.0);
+			//rough = log2(rough*(dist*rough+1.0)+1.0);
 			v = abs(uReflectionPosition[0].xyz-p);
-			if (s0+0.2 >= max(v.x,max(v.y,v.z))) {
+			if (s0+0.5 >= max(v.x,max(v.y,v.z))) {
 				result += textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,rough*uReflectionPosition[0].w).rgb;
 				count++;
 			}
 			v = abs(uReflectionPosition[1].xyz-p);
-			if (s1+0.2 >= max(v.x,max(v.y,v.z))) {
+			if (s1+0.5 >= max(v.x,max(v.y,v.z))) {
 				result += textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,rough*uReflectionPosition[1].w).rgb;
 				count++;
 			}
 			v = abs(uReflectionPosition[2].xyz-p);
-			if (s2+0.2 >= max(v.x,max(v.y,v.z))) {
+			if (s2+0.5 >= max(v.x,max(v.y,v.z))) {
 				result += textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,rough*uReflectionPosition[2].w).rgb;
 				count++;
 			}
 			v = abs(uReflectionPosition[3].xyz-p);
-			if (s3+0.2 >= max(v.x,max(v.y,v.z))) {
+			if (s3+0.5 >= max(v.x,max(v.y,v.z))) {
 				result += textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,rough*uReflectionPosition[3].w).rgb;
 				count++;
 			}
@@ -1464,15 +1595,16 @@ var KhawnEngine = function() {
 			return pow(max(val,0.0),k)*(1.0+k)*0.1;
 		}
         void main(void) {
+			ReflectionResolutions = ivec4(textureSize(uReflectionCubemap[0],0).x,textureSize(uReflectionCubemap[1],0).x,textureSize(uReflectionCubemap[2],0).x,textureSize(uReflectionCubemap[3],0).x);
 			position = vec4(WorldPosition,CameraSpacePosition.z);
 			highp vec3 normal = normalize(Normal);
 			highp vec3 ViewDir = normalize(PositionToCamera);
 			highp vec3 refl = reflect(ViewDir,normal);
 			highp float fresnel = FresnelReflectionCoefficient(ViewDir,normal,IOR);
-			highp vec3 DirectLight;
 			highp vec3 ReflectedLight;
+			highp vec3 DirectLight;
 			highp float reflection = mix(fresnel,1.0,Reflectivity);
-			highp vec3 position = WorldPosition+(normal*0.0125);
+			highp vec3 position = WorldPosition+(normal*0.0625);
 			for (lowp int i = 0; i<24; i++) {
 				highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
 				highp float div = (dot(lig,lig)+LightPositions[i].w);
@@ -1482,7 +1614,9 @@ var KhawnEngine = function() {
 				highp vec3 lignorm = normalize(lig);
 				DirectLight += LightColors[i]*max(dot(lignorm,normal)/div,0.0);
 			}
-			ReflectedLight += RayMarch(position,refl,Roughness);
+			if (!all(equal(ReflectionResolutions,ivec4(0)))) {
+				ReflectedLight += RayMarch(position,refl,Roughness);
+			}
 			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,ReflectedLight,reflection),1);
 			// color = vec4(vec3(fresnel),1.0);
         }
@@ -1546,7 +1680,7 @@ var KhawnEngine = function() {
 				if (div == 0.0) {
 					break;
 				}
-				DirectLight += LightColors[i]*max(sign(dot(lig,normal)),0.1)/div;
+				DirectLight += LightColors[i]*max(sign(dot(lig,normal)),0.0)/div;
 			}
 			color = vec4(uColor*texture(uTexture,UV).rgb*DirectLight,1);
         }
@@ -1557,17 +1691,20 @@ var KhawnEngine = function() {
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		in highp vec3 CameraSpacePosition;
+		in highp vec3 PositionToCamera;
 		in highp vec3 WorldPosition;
+		in highp vec3 Normal;
 		in highp vec2 UV;
 		highp vec3 fastNormalize(highp vec3 vect) {
-			vect = mix(vect,vect/dot(vect,vect),0.8);
-			vect = mix(vect,vect/dot(vect,vect),0.7);
-			vect = mix(vect,vect/dot(vect,vect),0.5);
+			highp vec3 a = abs(vect);
+			vect /= max(max(a.x,a.y),a.z);
+			vect = mix(vect,vect/dot(vect,vect),0.45);
 			return vect;
 		}
         void main(void) {
 			position = vec4(WorldPosition,CameraSpacePosition.z);
-			color = vec4(uColor*texture(uTexture,UV).rgb,1);
+			//color = vec4(uColor*texture(uTexture,UV).rgb,1);
+			color = vec4(uColor*texture(uTexture,UV).rgb*dot(normalize(PositionToCamera),normalize(Normal)),1.0);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
 	//,{Name:'uCubemap',Type:'samplerCube',Value:8}
@@ -1584,9 +1721,9 @@ var KhawnEngine = function() {
     this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:0,IOR:1.3});
 	//this.DefaultMaterial = new this.Material(this.DiffuseShader,{uColor:[1,1,1],uTexture:this.DefaultTexture});
 	this.DiffuseMaterial = new this.Material(this.DiffuseShader,{uColor:[1,1,1],uTexture:this.DefaultTexture});
-	this.XaxisMaterial = new this.Material(this.DefaultShader,{uColor:[1,0,0]});
-	this.YaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,1,0]});
-	this.ZaxisMaterial = new this.Material(this.DefaultShader,{uColor:[0,0,1]});
+	this.XaxisMaterial = new this.Material(this.UnlitShader,{uColor:[1,0,0],uTexture:this.DefaultTexture});
+	this.YaxisMaterial = new this.Material(this.UnlitShader,{uColor:[0,1,0],uTexture:this.DefaultTexture});
+	this.ZaxisMaterial = new this.Material(this.UnlitShader,{uColor:[0,0,1],uTexture:this.DefaultTexture});
     this.DebugMaterial = new this.Material(this.DebugShader,{});
 	this.GoldenRatio = 1.6180339887498948482045868343;
 	this.ThetaM = 3.8832220774509327;
@@ -2328,6 +2465,7 @@ var KhawnEngine = function() {
         this.Enabled = true;
 		res = res || 128;
 		this.Resolution = res;
+		this.Realtime = false;
 		this.Cubemap = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
 		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_POSITIVE_X, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
@@ -2338,6 +2476,7 @@ var KhawnEngine = function() {
 		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.generateMipmap(self.gl.TEXTURE_CUBE_MAP);
 		self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR_MIPMAP_LINEAR);
+		//self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		this.RenderBuffer = self.gl.createFramebuffer();
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.RenderBuffer);
 		this.RenderTexture = self.gl.createTexture();
@@ -2367,6 +2506,11 @@ var KhawnEngine = function() {
 			var pl = p.value.slice();
 			pl.push(Math.floor(Math.log2(this.Resolution)))
 			return {Cubemap:this.Cubemap,Position:p,PosLod:pl};
+		}
+		this.Update = function() {
+			if (this.Enabled && this.Realtime) {
+				this.Render();
+			}
 		}
 		this.Render = function() {
 			if (this.Enabled) {
@@ -2614,7 +2758,6 @@ var KhawnEngine = function() {
     }
     this.Components.RigidBody = function() {
         this.Enabled = true;
-        this.sides = [];
         this.velocity = new self.Vector3();
         this.angularVelocity = new self.Quaternion();
 		//this.angularVelocity = self.randomQuaternion().SlerpThisBy(self.IdentityQuaternion,0.1);
@@ -3260,6 +3403,25 @@ var KhawnEngine = function() {
             this.value = [this.value[0]/l,this.value[1]/l,this.value[2]/l];
             return this;
         }
+		this.__proto__.toArrayBuffer = function() {
+			var arr = [];
+			arr.push(new Uint8Array([86, 101, 99, 116, 111, 114, 51, 1]));
+			var F32A = new Float32Array(this.value);
+			arr.push(new Uint8Array(new Uint32Array([F32A.buffer.byteLength,0]).buffer));
+			arr.push(new Uint8Array(F32A.buffer));
+			var length = 0;
+			for (var i=0; i<arr.length; i++) {
+				length += arr[i].length;
+			}
+			arr[1].set(new Uint8Array(new Uint32Array([length-(arr[0].length+arr[1].length)]).buffer));
+			var bufr = new Uint8Array(length);
+			var idx = 0;
+			for (var i=0; i<arr.length; i++) {
+				bufr.set(arr[i],idx);
+				idx += arr[i].length;
+			}
+			return bufr;
+		}
     }
 	this.Hue = function(h) {
 		h *= 6;
@@ -3479,6 +3641,16 @@ var KhawnEngine = function() {
 		} else {
 			return new self.Quaternion(cos,v.Scale(sin/Math.sqrt(vl2)));
 		}
+	}
+	this.randomPointInSphere = function() {
+		var v = new self.Vector3([1,1,1]);
+		while (v.Length() > 1) {
+			v.value = [(Math.random()*2)-1,(Math.random()*2)-1,(Math.random()*2)-1];
+		}
+		return v;
+	}
+	this.randomPointOnSphere = function() {
+		return self.randomPointInSphere().Normalize();
 	}
     this.Matrix3x3 = function(m) {
         if (m) {
@@ -3820,6 +3992,14 @@ var KhawnEngine = function() {
         this.SetScale = function(scale) {
             this.matrix.SetScale(scale);
         }
+		this.__proto__.toArrayBuffer = function() {
+			var arr = [];
+			arr.push(self.TextEncoder.encode("Transform\x01"));
+			var F2A = new Float32Array([this.matrix.value[0][0],this.matrix.value[0][1],this.matrix.value[0][2],this.matrix.value[1][0],this.matrix.value[1][1],this.matrix.value[1][2],this.matrix.value[2][0],this.matrix.value[2][1],this.matrix.value[2][2],this.traslation.value[0],this.traslation.value[1],this.traslation.value[2]]);
+			arr.push(new Uint32Array([F2A.buffer.byteLength,0]));
+			arr.push(F2A);
+			return self.State.concatArrayOfBuffers(arr);
+		}
     }
     this.Object = function() {
         this.transform = new self.transform();
@@ -3969,6 +4149,44 @@ var KhawnEngine = function() {
         }
 		this.MultiplyThisMatrixBy = function(mt) {
 			this.transform.matrix.MultiplyThisBy(mt);
+		}
+		this.__proto__.toArrayBuffer = function() {
+			var arr = [];
+			arr.push(self.TextEncoder.encode("Object\x00"));
+			arr.push(new Uint32Array([0,0]));
+			var Name = self.TextEncoder.encode(this.Name);
+			arr.push(self.TextEncoder.encode("Name\x01"));
+			arr.push(new Uint32Array([Name.length,2]));
+			arr.push(Name);
+			arr.push(this.transform.toArrayBuffer());
+			arr.push(self.TextEncoder.encode("Children\x00"));
+			arr.push(new Uint32Array([0,0]));
+			var Length0 = 0;
+			for (var i=0; i<this.Children.length; i++) {
+				var bf = this.Children[i].toArrayBuffer();
+				arr.push(bf);
+				Length0 += bf.length;
+			}
+			arr[7] = new Uint32Array([Length0,0]);
+			arr.push(self.TextEncoder.encode("Components\x00"));
+			var idx = arr.length;
+			arr.push(new Uint32Array([0,0]));
+			var Length2 = 0;
+			for (var i=0; i<this.Components.length; i++) {
+				var o = {};
+				var Name = Object.keys(self.Components)[Object.values(self.Components).indexOf(this.Components[i].constructor)];
+				o[Name] = this.Components[i];
+				var bf = self.State.objectToArrayBuffer(o);
+				arr.push(bf);
+				Length2 += bf.length;
+			}
+			arr[idx] = new Uint32Array([Length2,0]);
+			var Length1 = 0;
+			for (var i=2; i<arr.length; i++) {
+				Length1 += arr[i].buffer.byteLength;
+			}
+			arr[1] = new Uint32Array([Length1,0]);
+			return self.State.concatArrayOfBuffers(arr);
 		}
     }
 	this.Math = {};
@@ -4123,33 +4341,6 @@ var KhawnEngine = function() {
         return MeshObject;
     }
     this.DebugBoneMesh = new this.Mesh({VertexPositions:[[0.001,0.15,0.001],[-0.001,0.15,0.001],[0.01,-0.01,0.01],[-0.01,-0.01,0.01],[0.001,0.15,-0.001],[-0.001,0.15,-0.001],[0.01,-0.01,-0.01],[-0.01,-0.01,-0.01]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
-	this.DebugArrowMesh = new this.Mesh((function(){
-		var MeshData = {VertexPositions:[],Indices:[[]]};
-		var side = [[0,0,0],[0.025,0,0],[0.025,0.5,0],[0.05,0.5,0],[0,0.6,0]];
-		for (var i=0; i<16; i++) {
-			var r = i*Math.PI/8;
-			var v = [Math.cos(r),Math.sin(r)];
-			for (var j=0; j<side.length; j++) {
-				var x = (v[0]*side[j][0])+(v[1]*side[j][2]);
-				var y = side[j][1];
-				var z = (v[0]*side[j][2])-(v[1]*side[j][0]);
-				//if ((x !== 0 || z !== 0) || i == 0) {
-					MeshData.VertexPositions.push([x,y,z]);
-				//}
-				if (i !== 0) {
-					var idx = MeshData.VertexPositions.length-side.length;
-					MeshData.Indices[0].push([MeshData.VertexPositions.length-1,idx,idx-1]);
-					MeshData.Indices[0].push([MeshData.VertexPositions.length-1,MeshData.VertexPositions.length-2,idx-1]);
-				}
-			}
-		}
-		for (var j=0; j<side.length; j++) {
-			var idx = MeshData.VertexPositions.length-(side.length-j);
-			MeshData.Indices[0].push([idx,j,j-1]);
-			MeshData.Indices[0].push([idx,idx-1,j-1]);
-		}
-		return MeshData;
-	})());
     this.CreateSkinnedMeshObject = function(SkinnedMesh,Mats) {
         var SkinnedMeshObject = new self.Object();
         SkinnedMeshObject.Name = "New Skinned Mesh";
@@ -4228,4 +4419,186 @@ var KhawnEngine = function() {
         }
         RenderCameras(this.Root);
     }
+	this.State = {};
+	this.State.concatArrayOfBuffers = function(arr) {
+		var length = 0;
+		for (var i=0; i<arr.length; i++) {
+			length += arr[i].buffer.byteLength;
+		}
+		var bufr = new Uint8Array(length);
+		var idx = 0;
+		for (var i=0; i<arr.length; i++) {
+			bufr.set(new Uint8Array(arr[i].buffer),idx);
+			idx += arr[i].buffer.byteLength;
+		}
+		return bufr;
+	}
+	this.State.toArrayBuffer = function(thing) {
+		var arr = [];
+		self.cleanUnusedAssets();
+		for (var i=0; i<self.Assets.length; i++) {
+			if (self.Assets[i].toArrayBuffer) {
+				arr.push(self.Assets[i].toArrayBuffer());
+			}
+		}
+		arr.push(self.Root.toArrayBuffer());
+		//return self.State.concatArrayOfBuffers(arr);
+		
+		//var AssetsBuffer = self.State.concatArrayOfBuffers(arr);
+		//arr = [self.TextEncoder.encode("Assets\x00"),new Uint32Array([AssetsBuffer.length,0]),AssetsBuffer];
+		//return self.State.concatArrayOfBuffers(arr);
+		
+		return self.State.concatArrayOfBuffers(arr);
+	}
+	this.State.parseArrayBuffer = function(ab,name) {
+		var idx = 0;
+		var Length = 0;
+		var state = 0;
+		var Name = "";
+		var isData = false;
+		var Type = 0;
+		var Result = name ? [name] : [];
+		for (var i=0; i<ab.length;) {
+			if (state === 0) {
+				if (ab[i] === 0 || ab[i] === 1) {
+					state++;
+					isData = (ab[i] === 1);
+				} else {
+					i++;
+				}
+			} else if (state === 1) {
+				Name = self.TextDecoder.decode(ab.subarray(idx,i));
+				i++;
+				idx = i;
+				state++;
+			} else if (state === 2) {
+				Length = new Uint32Array(ab.slice(i,i+8).buffer);
+				Type = Length[1];
+				Length = Length[0];
+				state++;
+				i += 8;
+			} else {
+				if (isData) {
+					var Data = ab.slice(i,i+Length);
+					i+=Length;
+					idx = i;
+					state = 0;
+					if (Type === 0) {
+						Data = new Float32Array(Data.buffer);
+					} else if (Type === 1) {
+						Data = new Int32Array(Data.buffer);
+					} else if (Type === 2) {
+						Data = self.TextDecoder.decode(Data);
+					} else if (Type === 4) {
+						Data = new Float32Array(pako.ungzip(Data).buffer);
+					} else if (Type === 5) {
+						Data = new Int32Array(pako.ungzip(Data).buffer);
+					} else if (Type === 6) {
+						Data = pako.ungzip(Data)
+					}
+					Result.push([Name,Data]);
+				} else {
+					Result.push(self.State.parseArrayBuffer(ab.slice(i,i+Length),Name));
+					i+=Length;
+					idx = i;
+					state = 0;
+				}
+			}
+		}
+		return Result;
+	}
+	this.State.objectToArrayBuffer = function(obj) {
+		var arr = [];
+		var keys = Object.keys(obj);
+		for (var i=0; i<keys.length; i++) {
+			var val = obj[keys[i]];
+			if (val) {
+				if (val instanceof Object && val.constructor !== Array && val.constructor !== self.Object && val.constructor !== Function) {
+					var bfr = self.State.objectToArrayBuffer(val);
+					if (bfr.length > 0) {
+						arr.push(self.TextEncoder.encode(keys[i]+"\x00"));
+						arr.push(new Uint32Array([bfr.buffer.byteLength,0]));
+						arr.push(bfr);
+					}
+				} else if (val.constructor === Array) {
+					var isNumbers = true;
+					for (var j=0; j<val.length; j++) {
+						if (val[j].constructor !== Number) {
+							isNumbers = false;
+							break;
+						}
+					}
+					if (isNumbers) {
+						arr.push(self.TextEncoder.encode(keys[i]+"\x01"));
+						var bfr = new Float32Array(val);
+						arr.push(new Uint32Array([bfr.buffer.byteLength,0]));
+						arr.push(bfr);
+					} else {
+						for (var j=0; j<val.length; j++) {
+							if (val[j].constructor === Number) {
+								arr.push(self.TextEncoder.encode(keys[i]+"["+j.toString()+"]\x01"));
+								var bfr = new Float32Array([val]);
+								arr.push(new Uint32Array([bfr.buffer.byteLength,0]));
+								arr.push(bfr);
+							} else {
+								var bfr = self.State.objectToArrayBuffer(val);
+								if (bfr.length > 0) {
+									arr.push(self.TextEncoder.encode(keys[i]+"["+j.toString()+"]\x00"));
+									arr.push(new Uint32Array([bfr.buffer.byteLength,0]));
+									arr.push(bfr);
+								}
+							}
+						}
+					}
+				} else if (val instanceof Float32Array) {
+					arr.push(self.TextEncoder.encode(keys[i]+"\x01"));
+					arr.push(new Uint32Array([val.buffer.byteLength,0]));
+					arr.push(bfr);
+				} else if (val.constructor === String) {
+					arr.push(self.TextEncoder.encode(keys[i]+"\x01"));
+					var bfr = self.TextEncoder.encode(val);
+					arr.push(new Uint32Array([bfr.buffer.byteLength,2]));
+					arr.push(bfr);
+				}
+			}
+		}
+		if (arr.length > 1) {
+			return self.State.concatArrayOfBuffers(arr);
+		} else {
+			return new Uint8Array(0);
+		}
+	}
+	this.State.load = function(arrbfr) {
+		var data = self.State.parseArrayBuffer(arrbfr);
+		var Assets = [];
+		var Root = null;
+		function toObject(arr) {
+			var Type = arr.splice(0,1)[0];
+			var obj = new self.Object();
+			for (var i=0; i<arr.length; i++) {
+				if (arr[i][0] == "Name") {
+					obj.Name = arr[i][1];
+				} else if (arr[i][0] == "Transform") {
+					//obj.Name = arr[i][1];
+					var val = arr[i][1];
+					var M = new self.Matrix3x3([[val[0],val[1],val[2]],[val[3],val[4],val[5]],[val[6],val[7],val[8]]]);
+					var V = new self.Vector3([val[9],val[10],val[11]]);
+					
+				} else if (arr[i][0] == "Children") {
+					for (var j=1; j<arr[i].length; j++) {
+						obj.addChild(toObject(arr[i][j]));
+					}
+				}
+			}
+			return obj;
+		}
+		for (var i=0; i<data.length; i++) {
+			if (data[i][0] == "Object") {
+				Root = toObject(data[i]);
+			} else {
+				Assets.push(data[i]);
+			}
+		}
+		return {Root,Assets};
+	}
 }
