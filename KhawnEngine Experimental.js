@@ -493,6 +493,7 @@ var KhawnEngine = function() {
 		this.VertexDataIndexBuffer = null;
 		this.VertexUVPositionBuffer = null;
 		this.VertexNormalBuffer = null;
+		this.IndexBuffersData = [];
 		this.l = [];
 		//mshDta.push({VertexPositions:VertexPositions,VertexNormals:VertexNormals,VertexDataIndexs:VertexDataIndexs,VertexUVs:newUVs,Indices:newIndcs,Weights:newWeights,WeightIndices:newWeightIndices});
 		//this.VertexRenderBuffers = self.gl.createFramebuffer();
@@ -568,10 +569,11 @@ var KhawnEngine = function() {
 				self.gl.bufferData(self.gl.ELEMENT_ARRAY_BUFFER, ar, self.gl.STATIC_DRAW);
 				//AllIndices.push(Array.from(ar));
 			} else {
-				var ar = this.MeshData.Indices[i].flat();
-				self.gl.bufferData(self.gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(ar), self.gl.STATIC_DRAW);
+				var ar = new Uint16Array(this.MeshData.Indices[i].flat());
+				self.gl.bufferData(self.gl.ELEMENT_ARRAY_BUFFER, ar, self.gl.STATIC_DRAW);
 				//AllIndices.push(ar);
 			}
+			this.IndexBuffersData.push(ar);
 			this.IndexBuffers.push(IB);
 			this.l.push(this.MeshData.Indices[i].length*3);
         }
@@ -599,18 +601,25 @@ var KhawnEngine = function() {
 				arr.push(new Uint8Array(new Uint32Array([this.VertexNormalBuffer.buffer.byteLength,0]).buffer));
 				arr.push(new Uint8Array(this.VertexNormalBuffer.buffer));
 			}
+			if (this.IndexBuffersData.length > 0) {
+				arr.push(self.TextEncoder.encode("Indexs\x00"));
+				var idxtmp = arr.length;
+				arr.push(new Uint8Array(8));
+				var len = 0;
+				for (var i=0; i<this.IndexBuffersData.length; i++) {
+					arr.push(self.TextEncoder.encode("Material\x01"));
+					arr.push(new Uint32Array([this.IndexBuffersData[i].buffer.byteLength,7]));
+					arr.push(this.IndexBuffersData[i]);
+					len += this.IndexBuffersData[i].buffer.byteLength+17;
+				}
+				arr[idxtmp] = new Uint32Array([len,0]);
+			}
 			var length = 0;
-			for (var i=0; i<arr.length; i++) {
-				length += arr[i].length;
+			for (var i=2; i<arr.length; i++) {
+				length += arr[i].buffer.byteLength;
 			}
-			arr[1].set(new Uint8Array(new Uint32Array([length-(arr[0].length+arr[1].length)]).buffer));
-			var bufr = new Uint8Array(length);
-			var idx = 0;
-			for (var i=0; i<arr.length; i++) {
-				bufr.set(arr[i],idx);
-				idx += arr[i].length;
-			}
-			return bufr;
+			arr[1] = new Uint32Array([length,0]);
+			return self.State.concatArrayOfBuffers(arr);
 			//this.VertexPositionBuffer = null;
 			//this.VertexDataIndexBuffer = null;
 			//this.VertexUVPositionBuffer = null;
@@ -1583,8 +1592,8 @@ var KhawnEngine = function() {
 			}
 		}
 		highp float FresnelReflectionCoefficient(highp vec3 dir, highp vec3 norml, highp float ior) {
-			highp float cosi = max(dot(dir,norml),0.0)*ior;
-			highp float cost = -dot(refract(dir,norml,1.0/ior),norml);
+			highp float cosi = max(dot(dir,norml),0.0);
+			highp float cost = -dot(refract(dir,norml,1.0/ior),norml)*ior;
 			return clamp((cost-cosi)/(cosi+cost),0.04,1.0);
 		}
 		highp float liniarSpecular(highp float val, highp float d) {
@@ -4174,7 +4183,8 @@ var KhawnEngine = function() {
 			var Length2 = 0;
 			for (var i=0; i<this.Components.length; i++) {
 				var o = {};
-				var Name = Object.keys(self.Components)[Object.values(self.Components).indexOf(this.Components[i].constructor)];
+				//var Name = Object.keys(self.Components)[Object.values(self.Components).indexOf(this.Components[i].constructor)];
+				var Name = self.State.getComponentType(this.Components[i]);
 				o[Name] = this.Components[i];
 				var bf = self.State.objectToArrayBuffer(o);
 				arr.push(bf);
@@ -4340,7 +4350,7 @@ var KhawnEngine = function() {
         MeshObject.AddComponent(MeshComponent);
         return MeshObject;
     }
-    this.DebugBoneMesh = new this.Mesh({VertexPositions:[[0.001,0.15,0.001],[-0.001,0.15,0.001],[0.01,-0.01,0.01],[-0.01,-0.01,0.01],[0.001,0.15,-0.001],[-0.001,0.15,-0.001],[0.01,-0.01,-0.01],[-0.01,-0.01,-0.01]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
+    //this.DebugBoneMesh = new this.Mesh({VertexPositions:[[0.001,0.15,0.001],[-0.001,0.15,0.001],[0.01,-0.01,0.01],[-0.01,-0.01,0.01],[0.001,0.15,-0.001],[-0.001,0.15,-0.001],[0.01,-0.01,-0.01],[-0.01,-0.01,-0.01]],VertexNormals:[[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],VertexDataIndexs:[[0,0,0],[2,0,0],[4,0,0],[6,0,0],[1,1,0],[3,1,0],[5,1,0],[7,1,0],[0,2,0],[1,2,0],[4,2,0],[5,2,0],[2,3,0],[3,3,0],[6,3,0],[7,3,0],[0,4,0],[1,4,0],[2,4,0],[3,4,0],[4,5,0],[5,5,0],[6,5,0],[7,5,0]],Indices:[[[0,1,2],[3,2,1],[4,6,5],[7,5,6],[8,10,9],[11,9,10],[12,13,14],[15,14,13],[16,17,18],[19,18,17],[20,22,21],[23,21,22]]]});
     this.CreateSkinnedMeshObject = function(SkinnedMesh,Mats) {
         var SkinnedMeshObject = new self.Object();
         SkinnedMeshObject.Name = "New Skinned Mesh";
@@ -4355,10 +4365,10 @@ var KhawnEngine = function() {
             // BoneRef.transform = MeshComponent.DefaultPose[i].InverseTransformTransform(self.IdentityTransform);
             // MeshComponent.SetBoneRefrence(i,BoneRef);
             // Bone.addChild(BoneRef);
-            var DebugBoneMeshComponent = new self.Components.MeshRenderer(self.DebugBoneMesh,Mats);
-            Bone.AddComponent(DebugBoneMeshComponent);
+            // var DebugBoneMeshComponent = new self.Components.MeshRenderer(self.DebugBoneMesh,Mats);
+            // Bone.AddComponent(DebugBoneMeshComponent);
             SkinnedMeshComponent.SetBoneRefrence(i,Bone);
-            SkinnedMeshObject.addChild(Bone);
+            // SkinnedMeshObject.addChild(Bone);
         }
         return SkinnedMeshObject;
     }
@@ -4495,6 +4505,8 @@ var KhawnEngine = function() {
 						Data = new Int32Array(pako.ungzip(Data).buffer);
 					} else if (Type === 6) {
 						Data = pako.ungzip(Data)
+					} else if (Type === 7) {
+						Data = new Uint16Array(Data.buffer);
 					}
 					Result.push([Name,Data]);
 				} else {
@@ -4566,6 +4578,26 @@ var KhawnEngine = function() {
 			return self.State.concatArrayOfBuffers(arr);
 		} else {
 			return new Uint8Array(0);
+		}
+	}
+	this.State.getComponentType = function(thing,depth,search) {
+		if (depth === undefined) {
+			depth = 4;
+		}
+		if (depth <= 0) {
+			return undefined;
+		}
+		search = search || self.Components;
+		var keys = Object.keys(search);
+		for (var i=0; i<keys.length; i++) {
+			if (thing.constructor === search[keys[i]]) {
+				return keys[i];
+			} else {
+				var s = self.State.getComponentType(thing,depth,search[keys[i]]);
+				if (s) {
+					return keys[i]+"."+s;
+				}
+			}
 		}
 	}
 	this.State.load = function(arrbfr) {
