@@ -143,6 +143,8 @@ var KhawnEngine = function() {
 		this.CamreaPosition = self.gl.getUniformLocation(this.program, 'uCamreaPosition');
 		this.ReflectionCubemap = self.gl.getUniformLocation(this.program, 'uReflectionCubemap');
 		this.ReflectionPosition = self.gl.getUniformLocation(this.program, 'uReflectionPosition');
+		this.isReflection = self.gl.getUniformLocation(this.program, 'uIsReflection');
+		this.Random = self.gl.getUniformLocation(this.program, 'uRandom');
         this.Uniforms = {};
         for (var i = 0; i < uniforms.length; i++) {
             if (uniforms[i].Value == undefined) {
@@ -219,6 +221,97 @@ var KhawnEngine = function() {
 			gl_Position = fragpos;
 		}
 	`);
+	this.TextureRenderVertexShader = new self.VertexShader(`#version 300 es
+		in highp ivec3 aVertexDataIndexs;
+		uniform highp sampler2D uVertexPoitions;
+		uniform highp sampler2D uVertexNormals;
+		uniform highp sampler2D uVertexUVs;
+
+		uniform highp mat3x4 uViewMatrix;
+		uniform highp vec3 uCamreaPosition;
+		uniform highp vec4 uOptions;
+
+		out highp vec3 WorldPosition;
+		out highp vec3 Normal;
+		out highp vec2 UV;
+
+		highp vec3 getVertexPosition(highp int idx) {
+			highp int w = textureSize(uVertexPoitions,0)[0];
+			return texelFetch(uVertexPoitions,ivec2(idx%w,idx/w),0).xyz;
+		}
+		highp vec3 getVertexNormal(highp int idx) {
+			highp int w = textureSize(uVertexNormals,0)[0];
+			return texelFetch(uVertexNormals,ivec2(idx%w,idx/w),0).xyz;
+		}
+		highp vec2 getVertexUV(highp int idx) {
+			highp int w = textureSize(uVertexUVs,0)[0];
+			return texelFetch(uVertexUVs,ivec2(idx%w,idx/w),0).xy;
+		}
+		void main(void) {
+			highp vec3 point = getVertexPosition(aVertexDataIndexs[0]);
+			WorldPosition = point;
+			Normal = getVertexNormal(aVertexDataIndexs[1]);
+			UV = getVertexUV(aVertexDataIndexs[2]);
+			gl_Position = vec4((UV*2.0)-1.0,0.0,1.0);
+		}
+	`);
+	this.TextureRenderShader = function(fs,uniforms) {
+        this.program = self.gl.createProgram();
+        this.vs = self.TextureRenderVertexShader;
+        this.fs = fs;
+        self.gl.attachShader(this.program,this.vs.shader);
+        self.gl.attachShader(this.program,this.fs.shader);
+        self.gl.linkProgram(this.program);
+        self.gl.useProgram(this.program);
+        if (!self.gl.getProgramParameter(this.program, self.gl.LINK_STATUS)) {
+            console.error(self.gl.getProgramInfoLog(this.program));
+        }
+        this.Uniforms = {};
+        for (var i = 0; i < uniforms.length; i++) {
+			if (uniforms[i].Value == undefined) {
+				this.Uniforms[uniforms[i].Name] = {Location:self.gl.getUniformLocation(this.program, uniforms[i].Name),Type:uniforms[i].Type};
+			} else {
+				var value = uniforms[i].Value;
+				var U = {Location:self.gl.getUniformLocation(this.program, uniforms[i].Name),Type:uniforms[i].Type};
+				if (U.Type == "float") {
+					if (value instanceof Array) {
+						self.gl.uniform1fv(U.Location,value);
+					} else {
+						self.gl.uniform1fv(U.Location,[value]);
+					}
+				} else if (U.Type == "vec3") {
+					self.gl.uniform3fv(U.Location,value);
+				} else if (U.Type == "vec4") {
+					self.gl.uniform4fv(U.Location,value);
+				} else if (U.Type == "mat3") {
+					self.gl.uniformMatrix3fv(U.Location,false,value.flat());
+				} else if (U.Type == "mat4") {
+					self.gl.uniformMatrix4fv(U.Location,false,value.flat());
+				} else if (U.Type == "mat2x3") {
+					self.gl.uniformMatrix2x3fv(U.Location,value.flat());
+				} else if (U.Type == "sampler2D") {
+					if (value instanceof Array) {
+						self.gl.uniform1iv(U.Location,value);
+					} else {
+						self.gl.uniform1iv(U.Location,[value]);
+					}
+				} else if (U.Type == "isampler2D") {
+					self.gl.uniform1i(U.Location,value);
+				}
+			}
+        }
+    }
+	this.NormalTextureRenderShader = new self.TextureRenderShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		in highp vec3 WorldPosition;
+		in highp vec3 Normal;
+		in highp vec2 UV;
+		
+		void main(void) {
+			color = vec4(abs(Normal),1.0);
+		}
+	`),[{Name:'uVertexPoitions',Type:'sampler2D',Value:0},{Name:'uVertexNormals',Type:'sampler2D',Value:1},{Name:'uVertexUVs',Type:'sampler2D',Value:2}]);
 	this.PostProcessingShader = function(fs,uniforms) {
         this.program = self.gl.createProgram();
         this.vs = self.VertexMapingVertexShader;
@@ -276,6 +369,28 @@ var KhawnEngine = function() {
 			color = vec4(texelFetch(uColorTex,Pos,0).xyz,texelFetch(uPositionTex,Pos,0).w);
 		}
 	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uPositionTex',Type:'sampler2D',Value:1}]);
+	this.ColorCorrectPostProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		uniform highp sampler2D uColorTex;
+		
+		const highp float a = 2.51;
+		const highp float b = 0.03;
+		const highp float c = 2.43;
+		const highp float d = 0.59;
+		const highp float e = 0.14;
+		const highp vec3 BloomColor = vec3(0.2126,0.7152,0.0722);
+		highp vec3 acesFilm(highp vec3 x) {
+			return clamp((x * (a * x + b)) / (x * (c * x + d ) + e), 0.0, 1.0);
+		}
+		highp vec3 colorCorrect(highp vec3 x) {
+			// x = pow(x,vec3(0.45));
+			return acesFilm(pow(x,vec3(0.45)))+max(dot(x,BloomColor)-1.0,0.0);
+		}
+		void main(void) {
+			color = vec4(colorCorrect(texelFetch(uColorTex,ivec2(gl_FragCoord.xy-0.5),0).xyz),1.0);
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0}]);
 	this.MotionBlurPostProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
 		out highp vec4 color;
 		
@@ -289,11 +404,11 @@ var KhawnEngine = function() {
 			highp vec3 Pos0 = vec3(fragpos.xy*uAspect,1);
 			highp vec3 Pos1 = uMotionMat*Pos0;
 			highp vec3 Color;
-			for (highp float i=0.0; i<1.0; i+=0.0625) {
+			for (highp float i=0.0; i<1.0; i+=0.125) {
 				highp vec3 p = mix(Pos0,Pos1,i);
 				Color += texture(uColorTex,((p.xy/(p.z*uAspect))+1.0)/2.0).rgb;
 			}
-			Color *= 0.0625;
+			Color *= 0.125;
 			color = vec4(Color,1.0);
 			// color = vec4(texture(uColorTex,((Pos1.xy/Pos1.z)+1.0)/2.0).rgb,1.0);
 		}
@@ -303,33 +418,132 @@ var KhawnEngine = function() {
 		
 		uniform highp sampler2D uColorTex;
 		uniform highp sampler2D uPosTex;
+		uniform highp vec2 uAspect;
 		uniform highp float uFocalDistance;
 		uniform highp float uArperture;
 		
 		in highp vec4 fragpos;
-		void main(void) {
-			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
-			highp vec2 xy = (fragpos.xy+1.0)*0.5;
-			// color = vec4(texture(uColorTex,xy,5.0).xyz,1.0);
-			color = vec4(texture(uColorTex,xy,log2(uArperture*abs((texelFetch(uPosTex,Pos,1).w-1.0)/uFocalDistance)+1.0)).xyz,1.0);
+		highp vec3 rnd(highp vec3 p) {
+			highp uvec3 x = floatBitsToUint(p);
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			return vec3(x)*(1.0/float(0xffffffffU));
 		}
-	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uPosTex',Type:'sampler2D',Value:1},{Name:'uFocalDistance',Type:'float'},{Name:'uArperture',Type:'float'}]);
+		highp float CalculateBlur(highp float distance, highp float aperture, highp float focalDistance) {
+			return (aperture/distance)*abs((distance/focalDistance)-1.0);
+		}
+		void main(void) {
+			highp vec2 xy = (fragpos.xy+1.0)*0.5;
+			// highp float dist = texelFetch(uPosTex,Pos,0).w;
+			highp float dist = textureLod(uPosTex,xy,0.0).w;
+			highp float Blur = CalculateBlur(dist,uArperture,uFocalDistance);
+			highp vec3 Random = rnd(fragpos.xyz)-0.5;
+			highp vec3 c;
+			highp float count = 0.0;
+			for (lowp int i=0; i<16; i++) {
+				Random = normalize(rnd(c+fragpos.xyz+Random)-0.5);
+				highp vec2 xy2 = xy+(((Random.xy)*uAspect)*Blur);
+				if (CalculateBlur(textureLod(uPosTex,xy2,0.0).w,uArperture,uFocalDistance) <= Blur) {
+					count++;
+					c += textureLod(uColorTex,xy2,0.0).rgb;
+				}
+			}
+			c /= count;
+			color = vec4(c,1.0);
+			// Blur *= dot(vec2(textureSize(uColorTex,0).xy),vec2(0.5));
+			// color = vec4(textureLod(uColorTex,xy,log2(Blur+1.0)).xyz,1.0);
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uPosTex',Type:'sampler2D',Value:1},{Name:'uAspect',Type:'vec2'},{Name:'uFocalDistance',Type:'float',Value:5},{Name:'uArperture',Type:'float',Value:0.01}]);
 	this.BloomPostProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
 		out highp vec4 color;
 		
 		uniform highp sampler2D uColorTex;
+		uniform highp vec2 uAspect;
 		
 		in highp vec4 fragpos;
+		const highp vec2 avg = vec2(0.5);
+		highp vec3 rnd(highp vec3 p) {
+			highp uvec3 x = floatBitsToUint(p);
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			return vec3(x)/float(0xffffffffU);
+		}
 		void main(void) {
 			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
 			highp vec2 xy = (fragpos.xy+1.0)*0.5;
-			highp vec3 bloom = max(texture(uColorTex,xy,1.0).xyz-1.0,vec3(0));
-			for (highp float i=1.0; i<32.0; i++) {
-				bloom += max(texture(uColorTex,xy,log2(i)).xyz-i,vec3(0));
+			highp vec3 c = texelFetch(uColorTex,Pos,0).xyz;
+			highp vec2 xy2 = xy;
+			highp vec3 bloom;
+			highp vec3 Random = rnd(c+fragpos.xyz)-0.5;
+			highp float size = 1.0/dot(vec2(textureSize(uColorTex,0).xy),avg);
+			for (highp float j=0.0; j<8.0; j++) {
+				highp float r = 1.0;
+				for (highp float i=1.0; i<=6.0; i++) {
+					Random = rnd(c+fragpos.xyz+Random+bloom)-0.5;
+					r *= 2.0;
+					// xy2 += (((Random.xy)*uAspect)*size*r);
+					xy2 = xy+(((Random.xy)*uAspect)*size*r);
+					bloom += max((textureLod(uColorTex,xy2,i*0.5).rgb-1.0),vec3(0))/r;
+				}
 			}
-			color = vec4(texelFetch(uColorTex,Pos,0).xyz+bloom,1.0);
+			bloom += fwidth(bloom);
+			bloom *= 0.125;
+			c += bloom;
+			color = vec4(c,1.0);
 		}
-	`),[{Name:'uColorTex',Type:'sampler2D',Value:0}]);
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uAspect',Type:'vec2'}]);
+	this.GIAddPostProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		uniform highp sampler2D uColorTex;
+		uniform highp sampler2D uColorTex2;
+		
+		void main(void) {
+			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
+			color = vec4(texelFetch(uColorTex,Pos,0).xyz+texelFetch(uColorTex2,Pos,0).xyz,1.0);
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uColorTex2',Type:'sampler2D',Value:1}]);
+	// temporal anti aliasing
+	this.TAAProcessingShader = new self.PostProcessingShader(new self.FragmentShader(`#version 300 es
+		out highp vec4 color;
+		
+		uniform highp sampler2D uColorTex;
+		uniform highp sampler2D uColorTex2;
+		uniform highp sampler2D uPosTex;
+		uniform highp sampler2D uPosTex2;
+		uniform highp mat3 uMotionMat;
+		uniform highp vec3 uMotion;
+		uniform highp vec2 uAspect;
+		uniform highp float uMixFactor;
+		const highp float Infinity = 1.0/0.0;
+		
+		in highp vec4 fragpos;
+		void main(void) {
+			highp vec3 Pos0 = vec3(fragpos.xy*uAspect,1);
+			highp vec3 Pos1 = uMotionMat*Pos0;
+			highp vec2 xy0 = ((Pos0.xy/(Pos0.z*uAspect))+1.0)*0.5;
+			highp vec4 Color0 = textureLod(uColorTex,xy0,0.0);
+			highp float depth0 = textureLod(uPosTex,xy0,0.0).w;
+			highp vec3 OrigPos1 = Pos1;
+			Pos1 *= depth0;
+			Pos1 -= uMotion;
+			highp vec2 xy1 = ((Pos1.xy/(Pos1.z*uAspect))+1.0)*0.5;
+			if (all(greaterThan(xy1,vec2(0.0001))) && all(lessThan(xy1,vec2(0.9999))) && depth0 != 0.0) {
+				if (abs(Pos1.z-textureLod(uPosTex2,xy1,0.0).w) <= 0.05) {
+					highp vec4 Color1 = textureLod(uColorTex2,xy1,0.0);
+					Color1.w = (Color1.w+1.0)*uMixFactor;
+					// color = vec4(mix(Color1.xyz,Color0.xyz,uMixFactor/Color1.w),Color1.w);
+					color = vec4(mix(Color1.xyz,Color0.xyz,1.0/Color1.w),Color1.w);
+				} else {
+					color = vec4(Color0.xyz,1.0);
+				}
+			} else {
+				color = vec4(Color0.xyz,1.0);
+			}
+		}
+	`),[{Name:'uColorTex',Type:'sampler2D',Value:0},{Name:'uColorTex2',Type:'sampler2D',Value:1},{Name:'uPosTex',Type:'sampler2D',Value:2},{Name:'uPosTex2',Type:'sampler2D',Value:3},{Name:'uAspect',Type:'vec2'},{Name:'uMotionMat',Type:'mat3'},{Name:'uMotion',Type:'vec3'},{Name:'uMixFactor',Type:'float',Value:0.95}]);
 	this.VertexMapingShader = function(fs,uniforms) {
         this.program = self.gl.createProgram();
         this.vs = self.VertexMapingVertexShader;
@@ -833,8 +1047,7 @@ var KhawnEngine = function() {
                         return {leng:13+CompressedLength,Value:Array.from(pako.ungzip(dat.slice(13,13+CompressedLength))).map(function(val){return !!val})};
                     }
                 }
-                
-                console.error("FBX Unknown PropertyType: "+PropertyType,dat+"\nYour FBX kinda sus");
+                console.error("FBX Unknown PropertyType: "+dat[0]+"\n"+PropertyType,"\nYour FBX kinda sus");
             }
             function decodeNode(U8,idx) {
                 if (U8.slice(0,13).reduce(function(a,b){return a+b}) == 0) {
@@ -844,7 +1057,7 @@ var KhawnEngine = function() {
                 var NumProperties = new Uint32Array(U8.slice(4,8).buffer)[0];
                 var PropertyListLen = new Uint32Array(U8.slice(8,12).buffer)[0];
                 var NameLen = U8[12];
-                var Name = Array.from(U8.slice(13,13+NameLen)).map(function(v) {return String.fromCharCode(v);}).join("");
+                var Name = self.TextDecoder.decode(U8.subarray(13,13+NameLen));
                 var i = 13+NameLen;
                 // if (U8.slice(i,i+13).reduce(function(a,b){return a+b}) == 0) {
                 //     return {leng:13};
@@ -1224,9 +1437,13 @@ var KhawnEngine = function() {
 		this.parsed = {};
 		this.decoded = {};
 		this.parse = function(OBJdata) {
-			OBJdata = self.TextDecoder.decode(OBJdata).split("\n");
+			if (OBJdata.constructor === String) {
+				OBJdata = OBJdata.split("\n");
+			} else {
+				OBJdata = self.TextDecoder.decode(OBJdata).split("\n");
+			}
 			for (var i=0; i<OBJdata.length; i++) {
-				OBJdata[i] = OBJdata[i].replaceAll("  "," ").replaceAll("  "," ").replaceAll("  "," ");
+				OBJdata[i] = OBJdata[i].replaceAll(/\s+/g," ").trim();
 				if (!OBJdata[i]) {
 					OBJdata.splice(i,1);
 					i--;
@@ -1304,6 +1521,28 @@ var KhawnEngine = function() {
 		}
 		return resu;
 	}
+	this.toShiftJIS = function(u8arr) {
+		return Encoding.convert(u8arr, {from:'SJIS',type:'string'}).replaceAll("\x00","");
+	}
+	//"upperbody"
+	this.BodyParts = [["parrent","center","groove","controlnode"],["hips","waist","lowerbody"],["chest","upperbody2"],["spine","upperbody"],["neck"],["head"],["shoulder"],["arm"],["elbow"],["wrist"],["leg"],["knee"],["foot","ankle"]];
+	this.normalizeBodyPart = function(name,flipside) {
+		var isIK = name.includes("IK") ? " IK" : "";
+		name = name.toLowerCase();
+		if (name.includes("twist")) {
+			return undefined;
+		}
+		var Right = name.includes("right")^!!flipside;
+		var Left = name.includes("left")^!!flipside;
+		for (var i=0; i<self.BodyParts.length; i++) {
+			for (var j=0; j<self.BodyParts[i].length; j++) {
+				if (name.includes(self.BodyParts[i][j])) {
+					return ((Right^Left) ? (!Right ? "Right " : "Left ")+self.BodyParts[i][0] : self.BodyParts[i][0])+isIK;
+				}
+			}
+		}
+		return undefined;
+	}
 	this.VMDdecoder = function() {
 		this.parsed = {};
 		this.parse = function(data) {
@@ -1330,13 +1569,14 @@ var KhawnEngine = function() {
 			KeyFrameCount = new Uint32Array(d.slice(0,4).buffer)[0];
 			// KeyFrameCount = 100;
 			console.log("KeyFrameCount: "+KeyFrameCount);
-			d = d.slice(4);
-			while (d.length >= 111 && Part == 0) {
+			//d = d.slice(4);
+			var idx = 4;
+			while (d.length-idx >= 111 && Part == 0) {
 				//utf16le
-				var name = self.Translate(d.slice(0,15));
-				var Frame = new Uint32Array(d.slice(15,19).buffer)[0];
-				var P = new Float32Array(d.slice(19,31).buffer);
-				var Q = new Float32Array(d.slice(31,47).buffer);
+				var name = self.Translate(d.slice(idx,idx+15));
+				var Frame = new Uint32Array(d.slice(idx+15,idx+19).buffer)[0];
+				var P = new Float32Array(d.slice(idx+19,idx+31).buffer);
+				var Q = new Float32Array(d.slice(idx+31,idx+47).buffer);
 				if (!Bones.includes(name)) {
 					Bones.push(name);
 				}
@@ -1345,29 +1585,32 @@ var KhawnEngine = function() {
 				}
 				result[Frame].Bones[name] = {Position:P,Rotation:Q};
 				CurrentFrame++;
-				d = d.slice(111,Infinity);
+				//d = d.slice(111,Infinity);
+				idx += 111;
 				if (CurrentFrame >= KeyFrameCount) {
 					CurrentFrame = 0;
 					KeyFrameCount = new Uint32Array(d.slice(0,4).buffer)[0];
 					console.log("KeyFrameCount: "+KeyFrameCount);
-					d = d.slice(4,Infinity);
+					d = d.slice(idx,Infinity);
 					Part = 1;
 					break;
 				}
 			}
-			while (d.length >= 23 && Part == 1) {
-				var name = self.Translate(d.slice(0,15));
-				var Frame = new Uint32Array(d.slice(15,19).buffer)[0];
-				var Value = new Float32Array(d.slice(19,23).buffer)[0];
+			idx = 0;
+			while (d.length-idx >= 23 && Part == 1) {
+				//var name = self.toShiftJIS(d.slice(idx,idx+15));
+				//var Frame = new Uint32Array(d.slice(idx+15,idx+19).buffer)[0];
+				//var Value = new Float32Array(d.slice(idx+19,idx+23).buffer)[0];
 				if (!BlendShapes.includes(name)) {
 					BlendShapes.push(name);
 				}
-				if (!result[Frame]) {
-					result[Frame] = {Bones:{},BlendShapes:{},Camera:{}};
-				}
-				result[Frame].BlendShapes[name] = Value;
+				//if (!result[Frame]) {
+				//	result[Frame] = {Bones:{},BlendShapes:{},Camera:{}};
+				//}
+				//result[Frame].BlendShapes[name] = Value;
 				CurrentFrame++;
-				d = d.slice(23);
+				//d = d.slice(23);
+				idx += 23;
 				if (CurrentFrame >= KeyFrameCount) {
 					CurrentFrame = 0;
 					KeyFrameCount = new Uint32Array(d.slice(0,4).buffer)[0];
@@ -1395,6 +1638,90 @@ var KhawnEngine = function() {
 			}
 			this.parsed = result;
 		}
+		this.__proto__.toAnimation = function() {
+			var result = [];
+			var nextIdx = [];
+			for (var i=this.parsed.length-1; i>=0; i--) {
+				nextIdx.unshift({});
+				if (nextIdx[1]) {
+					Object.assign(nextIdx[0],nextIdx[1]);
+				}
+				if (this.parsed[i]) {
+					var values = Object.keys(this.parsed[i].Bones);
+					for (var j=0; j<values.length; j++) {
+						nextIdx[0][values[j]] = i;
+					}
+				}
+			}
+			var values = Object.keys(this.parsed[0].Bones);
+			var renames = {};
+			var prev = {};
+			var next = {};
+			for (var i=0; i<this.parsed.length; i++) {
+				var frame = {};
+				if (this.parsed[i]) {
+					for (var j=0; j<values.length; j++) {
+						if (this.parsed[i].Bones[values[j]]) {
+							var name = renames[values[j]] ? renames[values[j]] : self.normalizeBodyPart(values[j]);
+							renames[values[j]] = name;
+							var pos = new self.Vector3(Array.from(this.parsed[i].Bones[values[j]].Position));
+							var arr = this.parsed[i].Bones[values[j]].Rotation;
+							//var rot = new self.Quaternion([-arr[0],arr[2],arr[1],arr[3]]);
+							//var rot = new self.Quaternion([-arr[0],arr[1],arr[2],arr[3]]);
+							var rot = new self.Quaternion([-arr[0],-arr[1],-arr[2],arr[3]]);
+							if (nextIdx[i+1]) {
+								var idx = nextIdx[i+1][values[j]] || 0;
+								var pos2 = new self.Vector3(Array.from(this.parsed[idx].Bones[values[j]].Position));
+								var arr2 = this.parsed[idx].Bones[values[j]].Rotation;
+								//var rot2 = new self.Quaternion([-arr2[0],arr2[2],arr2[1],arr2[3]]);
+								//var rot2 = new self.Quaternion([-arr2[0],arr2[1],arr2[2],arr2[3]]);
+								var rot2 = new self.Quaternion([-arr2[0],-arr2[1],-arr2[2],arr2[3]]);
+							}
+							if (!frame[name]) {
+								frame[name] = {Position:pos,Rotation:rot};
+								prev[name] = {Position:frame[name].Position,Rotation:frame[name].Rotation,Index:i};
+								next[name] = {Position:pos2,Rotation:rot2,Index:idx};
+							} else {
+								frame[name].Position.AddToThis(frame[name].Rotation.ToMatrix().Multiply(pos));
+								frame[name].Rotation.MultiplyBy(rot);
+								prev[name].Position.AddToThis(prev[name].Rotation.ToMatrix().Multiply(pos));
+								prev[name].Rotation.MultiplyBy(rot);
+								if (nextIdx[i+1]) {
+									next[name].Position.AddToThis(next[name].Rotation.ToMatrix().Multiply(pos2));
+									next[name].Rotation.MultiplyBy(rot2);
+								}
+							}
+						} else {
+							var name = renames[values[j]] ? renames[values[j]] : self.normalizeBodyPart(values[j]);
+							renames[values[j]] = name;
+							var p0 = prev[name];
+							var p1 = next[name] || p0;
+							if (p1) {
+								var interp = (i-p0.Index)/(p1.Index-p0.Index);
+								frame[name] = {Rotation:p0.Rotation.Slerp(p1.Rotation,interp),Position:p0.Position.Lerp(p1.Position,interp)};
+							} else {
+								frame[name] = {Rotation:p0.Rotation,Position:p0.Position};
+							}
+						}
+					}
+				} else {
+					for (var j=0; j<values.length; j++) {
+						var name = renames[values[j]] ? renames[values[j]] : self.normalizeBodyPart(values[j]);
+						renames[values[j]] = name;
+						var p0 = prev[name];
+						var p1 = next[name] || p0;
+						if (p1) {
+							var interp = (i-p0.Index)/(p1.Index-p0.Index);
+							frame[name] = {Rotation:p0.Rotation.Slerp(p1.Rotation,interp),Position:p0.Position.Lerp(p1.Position,interp)};
+						} else {
+							frame[name] = {Rotation:p0.Rotation,Position:p0.Position};
+						}
+					}
+				}
+				result.push(frame);
+			}
+			return new self.Animation(result);
+		}
 	}
 	this.AssetFileImporter = function() {
 		this.Assets = [];
@@ -1415,7 +1742,7 @@ var KhawnEngine = function() {
 					decoder.decodeData();
 				}
 				reader.readAsArrayBuffer(file);
-			} else if (file.name.endsWith(".obj")) {
+			} else if (file.name.endsWith(".png") || file.name.endsWith(".jpg")) {
 				var reader = new FileReader();
 				reader.onload = function(e) {
 					var data = new Uint8Array(e.target.result);
@@ -1428,6 +1755,174 @@ var KhawnEngine = function() {
 				}
 				reader.readAsArrayBuffer(file);
 			}
+		}
+	}
+	this.Animation = function(keyframes) {
+		this.IsHumanoid = false;
+		this.KeyFrames = keyframes ? keyframes : [];
+		this.FPS = 30;
+		this.__proto__.fetch = function(time) {
+			return this.KeyFrames[time];
+		}
+	}
+	this.AudioContext = new (window.AudioContext || window.webkitAudioContext)({latencyHint:"interactive"});
+	this.ProceduralSound = function(samples,channels) {
+		this.Samples = samples;
+		this.Channels = channels;
+		this.SampleRate = self.AudioContext.sampleRate;
+		this.AudioBuffer = self.AudioContext.createBuffer(this.Channels || 1,this.Samples,self.AudioContext.sampleRate);
+		this.__proto__.setChannel = function(channel,data) {
+			this.AudioBuffer.getChannelData(channel).set(data);
+		}
+		this.__proto__.getSource = function() {
+			var Source = self.AudioContext.createBufferSource();
+			Source.buffer = this.AudioBuffer;
+			return Source;
+		}
+	}
+	this.Components = {};
+	this.Components.AudioEmitter = function() {
+		this.Enabled = true;
+		// this.Panner = new PannerNode(self.AudioContext,{panningModel:"HRTF",distanceModel:"linear",refDistance:1,maxDistance:1000,rolloffFactor:1});
+		this.Panner = new PannerNode(self.AudioContext,{panningModel:"HRTF",distanceModel:"exponential",refDistance:1,maxDistance:1000,rolloffFactor:1});
+		this.Panner.connect(self.AudioContext.destination);
+		this.LisinerObject = null;
+		this.PlayingCount = 0;
+		this.__proto__.Update = function() {
+			if (this.LisinerObject && this.Enabled) {
+				var trsfm0 = this.Parrent.getGlobalTransform();
+				var trsfm1 = this.LisinerObject.getGlobalTransform();
+				var v0 = trsfm1.InverseTransformTransform(trsfm0).traslation;
+				this.Panner.positionX.value = v0.value[0];
+				this.Panner.positionY.value = v0.value[1];
+				this.Panner.positionZ.value = -v0.value[2];
+			}
+		}
+		this.__proto__.playSound = function(sound,LisinerObj) {
+			if (this.Enabled) {
+				var Source = sound.getSource();
+				this.LisinerObject = LisinerObj;
+				this.Update();
+				var dis = this;
+				Source.connect(this.Panner);
+				Source.onended = function() {
+					try {
+						Source.disconnect(dis.Panner);
+					} catch (e) {}
+					dis.PlayingCount--;
+					if (dis.PlayingCount <= 0) {
+						dis.LisinerObject = null;
+						dis.PlayingCount = 0;
+					}
+					Source.stop(0);
+				};
+				this.PlayingCount++;
+				Source.start(0);
+			}
+		}
+	}
+	this.Components.HumanoidRig = function() {
+		this.Bones = {};
+		this.DefaultPose = {};
+		this.__proto__.createFromSkinnedMeshRenderer = function(mr,mirror) {
+			var BoneNames = mr.SkinnedMesh.Bones;
+			var BoneObjects = mr.BoneRefrences;
+			for (var i=0; i<BoneNames.length; i++) {
+				var name = self.normalizeBodyPart(BoneNames[i],mirror);
+				if (name) {
+					this.DefaultPose[name] = BoneObjects[i].transform.Clone();
+					this.Bones[name] = BoneObjects[i];
+				}
+			}
+			if (!this.Bones.parrent && this.Parrent) {
+				this.DefaultPose.parrent = this.Parrent.transform.Clone();
+				this.Bones.parrent = this.Parrent;
+			}
+		}
+		this.__proto__.addBone = function(bone) {
+			var name = self.normalizeBodyPart(bone.Name);
+			this.Bones[name] = bone;
+			this.DefaultPose[name] = bone.transform.Clone();
+		}
+		this.__proto__.setGlobalPose = function(pse) {
+			var keys = Object.keys(this.Bones);
+			var vals = Object.values(this.Bones);
+			var dis = this;
+			function setPoseObj(obj,trfsm) {
+				var idx = vals.indexOf(obj);
+				if (idx !== -1) {
+					var gtInv = trfsm.InverseTransform();
+					if (pse[keys[idx]]) {
+						if (keys[idx] !== "parrent") {
+							//obj.setMatrix(gtInv.matrix.Multiply(pse[keys[idx]].Rotation.ToMatrix().Multiply(dis.DefaultPose[keys[idx]].matrix)));
+							obj.setMatrix(gtInv.matrix.Multiply(pse[keys[idx]].Rotation.ToMatrix().Multiply(trfsm.matrix.Multiply(dis.DefaultPose[keys[idx]].matrix))));
+							//obj.setMatrix(gtInv.matrix.Multiply(dis.DefaultPose[keys[idx]].matrix.Multiply(pse[keys[idx]].Rotation.ToMatrix())));
+						}
+						obj.SetPosition(gtInv.TransformVector(pse[keys[idx]].Position.Scale(0.1)).Add(dis.DefaultPose[keys[idx]].traslation));
+					}
+				}
+				var t = trfsm.TransformTransform(obj.transform);
+				//var t = obj.transform.TransformTransform(trfsm);
+				for (var i=0; i<obj.Children.length; i++) {
+					setPoseObj(obj.Children[i],t);
+				}
+			}
+			//setPoseObj(this.Parrent,this.Parrent.transform);
+			setPoseObj(this.Parrent,self.IdentityTransform);
+			//self.IdentityTransform
+		}
+		this.__proto__.setLocalPose = function(pse) {
+			var keys = Object.keys(this.Bones);
+			var vals = Object.values(this.Bones);
+			var dis = this;
+			function setPoseObj(obj,trfsm) {
+				var idx = vals.indexOf(obj);
+				if (idx !== -1) {
+					var gtInv = trfsm.InverseTransform();
+					if (pse[keys[idx]]) {
+						//obj.setMatrix(pse[keys[idx]].Rotation.ToMatrix().Multiply(dis.DefaultPose[keys[idx]].matrix));
+						if (keys[idx] !== "parrent") {
+							obj.setMatrix(dis.DefaultPose[keys[idx]].matrix.Multiply(pse[keys[idx]].Rotation.ToMatrix()));
+						}
+						obj.SetPosition(gtInv.TransformVector(pse[keys[idx]].Position.Scale(0.1)).Add(dis.DefaultPose[keys[idx]].traslation));
+					}
+				}
+				var t = trfsm.TransformTransform(obj.transform);
+				//var t = obj.transform.TransformTransform(trfsm);
+				for (var i=0; i<obj.Children.length; i++) {
+					setPoseObj(obj.Children[i],t);
+				}
+			}
+			//setPoseObj(this.Parrent,this.Parrent.transform);
+			setPoseObj(this.Parrent,self.IdentityTransform);
+			//self.IdentityTransform
+		}
+		this.__proto__.setTPose = function() {
+			var v0 = new self.Vector3([0,1,0]);
+			var v1 = new self.Vector3([1,0,0]);
+			var q1 = self.axsisAngle(new self.Angle(30),v1);
+			var q0 = self.axsisAngle(new self.Angle(-90),v0);
+			this.Bones["Right arm"].setMatrix(q0.Conjugate().Multiply(q1).ToMatrix());
+			this.Bones["Left arm"].setMatrix(q0.Multiply(q1).ToMatrix());
+		}
+		this.__proto__.setAPose = function() {
+			var v0 = new self.Vector3([1,0,0]);
+			var q0 = self.axsisAngle(new self.Angle(-45),v0);
+			this.Bones["Right shoulder"].setMatrix(this.DefaultPose["Right shoulder"].matrix.Multiply(q0.ToMatrix()));
+			this.Bones["Left shoulder"].setMatrix(this.DefaultPose["Left shoulder"].matrix.Multiply(q0.ToMatrix()));
+			
+			//this.Bones["Right shoulder"].setMatrix(this.DefaultPose["Right shoulder"].matrix.Multiply(q0.ToMatrix()));
+			//this.Bones["Left shoulder"].setMatrix(this.DefaultPose["Left shoulder"].matrix.Multiply(q0.ToMatrix()));
+		}
+		this.__proto__.setIPose = function() {
+			var v0 = new self.Vector3([0,1,0]);
+			var v1 = new self.Vector3([1,0,0]);
+			var v2 = new self.Vector3([0,0,1]);
+			var q0 = self.axsisAngle(new self.Angle(120),v0);
+			var q1 = self.axsisAngle(new self.Angle(0),v1);
+			var q2 = self.axsisAngle(new self.Angle(-60),v2);
+			this.Bones["Right arm"].setMatrix(q0.Conjugate().Multiply(q1).Multiply(q2.Conjugate()).ToMatrix());
+			this.Bones["Left arm"].setMatrix(q0.Multiply(q1).Multiply(q2).ToMatrix());
 		}
 	}
     this.DefaultVertexShader = new self.VertexShader(`#version 300 es
@@ -1479,22 +1974,39 @@ var KhawnEngine = function() {
     `);
     this.DebugShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
         layout(location = 0) out highp vec4 color;
-		layout(location = 1) out highp vec4 position;
+		layout(location = 1) out highp vec4 color2;
+		layout(location = 2) out highp vec4 position;
+		in highp vec3 CameraSpacePosition;
 		in highp vec3 PositionToCamera;
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
         void main(void) {
-			//position = vec4(WorldPosition,CameraSpacePosition.z);
-			//color = vec4(mod(WorldPosition,vec3(1)),1);
-			//color = vec4(abs(Normal),1);
-			color = vec4((Normal+1.0)*0.5,1);
+			position = vec4(WorldPosition,CameraSpacePosition.z);
+			// color = vec4(mod(WorldPosition,vec3(1)),1);
+			// color = vec4(abs(Normal),1);
+			// color = vec4((Normal+1.0)*0.5,1);
 			//color = vec4((normalize(PositionToCamera)+1.0)*0.5,1);
+			highp vec3 x = normalize(dFdx(WorldPosition));
+			highp vec3 y = normalize(dFdy(WorldPosition));
+			highp vec3 normal2 = normalize(cross(y,x));
+			// color = vec4((normal2+1.0)*0.5,1);
+			// color = vec4(abs(normal2),1);
+			color = vec4(vec3(dot(normal2,Normal)),1);
+			color2 = vec4(0.0);
         }
     `),[]);
     this.DefaultShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
-		highp vec3[24] fibSphere = vec3[24](vec3(0.08330922277203934,1.9982641400478363,0), vec3(-0.18386253656195853,1.984395334458658,-0.16843314468272927), vec3(0.03616444827285966,1.9567539787075074,0.4120752352343671), vec3(0.3499118507917456,1.9155319155950687,-0.45639804667875356), vec3(-0.721346997383237,1.8610152438246286,0.12759612697314385), vec3(0.7466459289412188,1.7935823323550246,0.4749550229857708), vec3(-0.26768567859714737,1.7137011943586609,-0.9957773817112359), vec3(-0.5393508864777872,1.6219262390104359,1.038487311653391), vec3(1.222186501017631,1.5188944236515596,-0.4463405499509058), vec3(-1.3153906106679338,1.40532083303388,-0.542974122410637), vec3(0.6506404788955875,1.2819937163266504,1.3903809113050654), vec3(0.48976880487264574,1.1497690163310286,-1.5614601265670538), vec3(-1.493781494289108,1.0095644288718937,0.8656769092888913), vec3(1.7624458009727377,0.8623530335973324,0.38746876529475605), vec3(-1.0755223265031053,0.7091565403907663,-1.5298198346257468), vec3(-0.2470735207029002,0.5510381982685012,1.906649306877507), vec3(1.5000777814051125,0.38909541597797437,-1.2642671422605438), vec3(-1.9856682975967084,0.22445214551289128,-0.08211361820094092), vec3(1.417057403081286,0.05825108140691417,1.410161383632188), vec3(-0.09224721287263171,-0.10835427005387264,-1.9949310273486458), vec3(-1.2693174548472759,-0.2742075966566752,1.5210665313377336), vec3(1.93398701596605,-0.438157805562027,-0.26021521765608185), vec3(-1.5663385360298747,-0.5990670123791483,-1.0898175559362722), vec3(0.4064104272907257,-0.7558184385690411,1.8065350958418789));
+		#pragma optimize(off)
+		// highp vec3[24] fibSphere = vec3[24](vec3(0.08330922277203934,1.9982641400478363,0), vec3(-0.18386253656195853,1.984395334458658,-0.16843314468272927), vec3(0.03616444827285966,1.9567539787075074,0.4120752352343671), vec3(0.3499118507917456,1.9155319155950687,-0.45639804667875356), vec3(-0.721346997383237,1.8610152438246286,0.12759612697314385), vec3(0.7466459289412188,1.7935823323550246,0.4749550229857708), vec3(-0.26768567859714737,1.7137011943586609,-0.9957773817112359), vec3(-0.5393508864777872,1.6219262390104359,1.038487311653391), vec3(1.222186501017631,1.5188944236515596,-0.4463405499509058), vec3(-1.3153906106679338,1.40532083303388,-0.542974122410637), vec3(0.6506404788955875,1.2819937163266504,1.3903809113050654), vec3(0.48976880487264574,1.1497690163310286,-1.5614601265670538), vec3(-1.493781494289108,1.0095644288718937,0.8656769092888913), vec3(1.7624458009727377,0.8623530335973324,0.38746876529475605), vec3(-1.0755223265031053,0.7091565403907663,-1.5298198346257468), vec3(-0.2470735207029002,0.5510381982685012,1.906649306877507), vec3(1.5000777814051125,0.38909541597797437,-1.2642671422605438), vec3(-1.9856682975967084,0.22445214551289128,-0.08211361820094092), vec3(1.417057403081286,0.05825108140691417,1.410161383632188), vec3(-0.09224721287263171,-0.10835427005387264,-1.9949310273486458), vec3(-1.2693174548472759,-0.2742075966566752,1.5210665313377336), vec3(1.93398701596605,-0.438157805562027,-0.26021521765608185), vec3(-1.5663385360298747,-0.5990670123791483,-1.0898175559362722), vec3(0.4064104272907257,-0.7558184385690411,1.8065350958418789));
+        // highp vec3[16] fibSphere = vec3[16](vec3(0.06245931784238083,0.9980475107000991,0),vec3(-0.1374479898036949,0.9824733131012553,-0.12591361778126356),vec3(0.026878034943095843,0.9515679480481722,0.3062613450714744),vec3(0.25778109935695087,0.9058136834259364,-0.3362297960214997),vec3(-0.5251503343856905,0.8459244992310679,0.09289169981900676),vec3(0.5354530838883197,0.7728349461524715,0.34061142223946994),vec3(-0.18847497230142526,0.6876855622205048,-0.7011175025125569),vec3(-0.3715284452860901,0.5918050750924775,0.7153554133702267),vec3(0.8205675405373889,0.4866896677019633,-0.29966994972564903),vec3(-0.8572721931828501,0.37397963082453317,-0.3538694992844283),vec3(0.4097855639616461,0.2554337668888117,0.8756879480166595),vec3(0.2966289744327563,0.13290194445282522,-0.9456999125978756),vec3(-0.8651814340962697,0.008296231623858378,0.5013903256306063),vec3(0.9700322803559933,-0.11643894112485227,0.21325887568182147),vec3(-0.5584113355749855,-0.2393571231413216,-0.7942826624715356),vec3(-0.1199665641708251,-0.3585402173062328,0.9257736959187416));
+		// highp vec3[12] fibSphere = vec3[12](vec3(0.08323691620031028,0.9965297867005595,0),vec3(-0.18242797986764214,0.9689124217106447,-0.16711897323830374),vec3(0.03538246402284002,0.9144430665938302,0.4031649280358402),vec3(0.3351336589182639,0.834631259831657,-0.43712251231419985),vec3(-0.6712188791086642,0.7316888688738209,0.11872916867500176),vec3(0.6695854733368877,0.6084687914680451,0.42593546894527656),vec3(-0.22936663356231998,0.4683858917731504,-0.8532324441769424),vec3(-0.437393677405931,0.3153223623952687,0.8421749098250215),vec3(0.9281861305289453,0.15352013509990164,-0.3389720861850006),vec3(-0.9242729143744025,-0.012536678120480762,-0.3815264230109782),vec3(0.4170585027659529,-0.17824605564949209,0.8912297957968078),vec3(0.28156049850402265,-0.33901560454258944,-0.8976592368815624));
+		// highp vec3[8] fibSphere = vec3[8](vec3(0.12467473338522801,0.992197667229329,0),vec3(-0.27007796384308785,0.9305076219123143,-0.24741353845224667),vec3(0.05115255311673758,0.8109631195052179,0.5828569593922723),vec3(0.46700329425221376,0.6409968581633252,-0.6091231000235717),vec3(-0.8884750672724862,0.4311765167986662,0.15715872930423194),vec3(0.8276337105080087,0.19454770798898718,0.526472820330715),vec3(-0.25922303458319945,-0.05417713502693632,-0.9642967677959677),vec3(-0.4397448389230519,-0.29953350618957414,0.8467019282547545));
+		// highp vec3[6] fibSphere = vec3[6](vec3(0.16589613269341513,0.986143231562925,0),vec3(-0.35351347152267554,0.8775825618903728,-0.32384729814824237),vec3(0.06471049780938339,0.6724122440830567,0.737342746272349),vec3(0.5594260559098868,0.39321867977635777,-0.7296722263071593),vec3(-0.9822467648435449,0.0707372016677029,0.17374562226028226),vec3(0.81484372749171,-0.25953145961883317,0.518336880065015));
+		// highp vec3[4] fibSphere = vec3[4](vec3(0.2474039592545231,0.9689124217106447,0),vec3(-0.5026192077331032,0.7316888688738209,-0.46044036658822185),vec3(0.08296566809241174,0.3153223623952687,0.9453509960281666),vec3(0.5986952887351837,-0.17824605564949209,-0.7808919866996287));
+		highp vec3[3] fibSphere = vec3[3](vec3(0.3271946967961522,0.9449569463147377,0),vec3(-0.6204745160032578,0.5403023058681398,-0.5684054831404197),vec3(0.0870242620954784,-0.09572354801437566,0.9915965813587081));
         layout(location = 0) out highp vec4 color;
-		layout(location = 1) out highp vec4 position;
+		layout(location = 1) out highp vec4 color2;
+		layout(location = 2) out highp vec4 position;
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		uniform samplerCube uReflectionCubemap[4];
@@ -1504,12 +2016,16 @@ var KhawnEngine = function() {
 		uniform highp float Reflectivity;
 		uniform highp float Roughness;
 		uniform highp float IOR;
+		uniform bool uIsReflection;
+		uniform highp mat3 uRandom;
 		in highp vec3 PositionToCamera;
 		in highp vec3 CameraSpacePosition;
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
 		in highp vec2 UV;
 		const highp float Infinity = 1.0/0.0;
+		const highp float GILowResLevel = 2.0;
+		const highp float ShadowLowResLevel = 2.0;
 		highp ivec4 ReflectionResolutions;
 		highp vec3 fastNormalize(highp vec3 vect) {
 			vect = mix(vect,vect/dot(vect,vect),0.8);
@@ -1517,27 +2033,205 @@ var KhawnEngine = function() {
 			vect = mix(vect,vect/dot(vect,vect),0.5);
 			return vect;
 		}
-		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir, highp float rough) {
+		highp vec3 rnd(highp vec3 p) {
+			highp uvec3 x = floatBitsToUint(p);
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			return vec3(x)*(1.0/float(0xffffffffU));
+		}
+		highp vec3 RayMarch(highp vec3 pos, highp vec3 dir) {
 			highp vec3 p = pos;
 			highp vec3 v;
 			bool hit;
 			highp float dist = Infinity;
-			highp float dtmp = Infinity;
-			for (highp float i=0.025; i<1.0; i+=0.025) {
-				p = pos-(dir*i/(1.0-i));
+			highp float jump = 4.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w)));
+			for (highp float i=jump*0.5; i<1.0 && !hit; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				p = pos-(dir*dist);
 				v = abs(uReflectionPosition[0].xyz-p);
-				hit = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
+				hit = textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,0.0).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[0].w == 0.0;
 				if (hit) {
 					v = abs(uReflectionPosition[1].xyz-p);
-					hit = texture(uReflectionCubemap[1],uReflectionPosition[1].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
+					hit = textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,0.0).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[1].w == 0.0;
 					if (hit) {
 						v = abs(uReflectionPosition[2].xyz-p);
-						hit = texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
+						hit = textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,0.0).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[2].w == 0.0;
 						if (hit) {
 							v = abs(uReflectionPosition[3].xyz-p);
-							hit = texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w-max(v.x,max(v.y,v.z)) < -0.08;
+							hit = textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,0.0).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[3].w == 0.0;
+						}
+					}
+				}
+			}
+			if (hit) {
+				highp vec4 weights;
+				v = abs(uReflectionPosition[0].xyz-p);
+				highp vec4 dist2 = vec4(max(v.x,max(v.y,v.z)),0.0,0.0,0.0);
+				weights.x = abs(dist2.x-textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,0.0).w);
+				v = abs(uReflectionPosition[1].xyz-p);
+				dist2.y = max(v.x,max(v.y,v.z));
+				weights.y = abs(dist2.y-textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,0.0).w);
+				v = abs(uReflectionPosition[2].xyz-p);
+				dist2.z = max(v.x,max(v.y,v.z));
+				weights.z = abs(dist2.z-textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,0.0).w);
+				v = abs(uReflectionPosition[3].xyz-p);
+				dist2.w = max(v.x,max(v.y,v.z));
+				weights.w = abs(dist2.w-textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,0.0).w);
+				highp vec3 result;
+				weights -= min(min(weights.x,weights.y),min(weights.z,weights.w));
+				weights = exp(-min(weights*50.0,vec4(25.0)));
+				weights /= weights.x+weights.y+weights.z+weights.w;
+				result += weights.x*textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,0.0).rgb;
+				result += weights.y*textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,0.0).rgb;
+				result += weights.z*textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,0.0).rgb;
+				result += weights.w*textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,0.0).rgb;
+				return result;
+			} else {
+				return vec3(0.0);
+			}
+		}
+		highp float Shadow(highp vec3 pos, highp vec3 dir, highp float LightDistance) {
+			highp vec3 p = pos;
+			highp vec3 v;
+			bool hit;
+			bvec4 hits;
+			if (uReflectionPosition[0].w == 0.0 && uReflectionPosition[1].w == 0.0 && uReflectionPosition[2].w == 0.0 && uReflectionPosition[3].w == 0.0) {
+				return Infinity;
+			}
+			highp float dist;
+			highp float distmp = Infinity;
+			highp float minDist = Infinity;
+			highp float minDistDist = 1.0;
+			highp float jump = 4.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w)));
+			for (highp float i=jump*0.5; i<1.0; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				if (dist >= LightDistance) {
+					break;
+				}
+				p = pos-(dir*dist);
+				v = abs(uReflectionPosition[0].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.x = distmp < 0.0 || uReflectionPosition[0].w == 0.0;
+				if (!hits.x && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[1].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.y = distmp < 0.0 || uReflectionPosition[1].w == 0.0;
+				if (!hits.y && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[2].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.z = distmp < 0.0 || uReflectionPosition[2].w == 0.0;
+				if (!hits.z && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[3].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.w = distmp < 0.0 || uReflectionPosition[3].w == 0.0;
+				if (!hits.w && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				hit = all(hits);
+				if (hit) {
+					break;
+				}
+			}
+			if (hit) {
+				return 0.0;
+			} else {
+				return minDist*(minDistDist*minDistDist);
+			}
+		}
+		highp float lowResShadow(highp vec3 pos, highp vec3 dir, highp float LightDistance) {
+			highp vec3 p = pos;
+			highp vec3 v;
+			bool hit;
+			bvec4 hits;
+			if (uReflectionPosition[0].w == 0.0 && uReflectionPosition[1].w == 0.0 && uReflectionPosition[2].w == 0.0 && uReflectionPosition[3].w == 0.0) {
+				return Infinity;
+			}
+			highp float dist;
+			highp float distmp = Infinity;
+			highp float minDist = Infinity;
+			highp float minDistDist = 1.0;
+			highp float jump = 4.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w))-ShadowLowResLevel);
+			for (highp float i=jump*0.5; i<1.0; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				if (dist >= LightDistance) {
+					break;
+				}
+				p = pos-(dir*dist);
+				v = abs(uReflectionPosition[0].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.x = distmp < 0.0 || uReflectionPosition[0].w == 0.0;
+				if (!hits.x && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[1].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.y = distmp < 0.0 || uReflectionPosition[1].w == 0.0;
+				if (!hits.y && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[2].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.z = distmp < 0.0 || uReflectionPosition[2].w == 0.0;
+				if (!hits.z && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[3].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.w = distmp < 0.0 || uReflectionPosition[3].w == 0.0;
+				if (!hits.w && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				hit = all(hits);
+				if (hit) {
+					break;
+				}
+			}
+			if (hit) {
+				return 0.0;
+			} else {
+				return minDist*(minDistDist*minDistDist);
+			}
+		}
+		highp vec3 lowResRayMarch(highp vec3 pos, highp vec3 dir) {
+			highp vec3 result = vec3(0.0);
+			if (uReflectionPosition[0].w == 0.0 && uReflectionPosition[1].w == 0.0 && uReflectionPosition[2].w == 0.0 && uReflectionPosition[3].w == 0.0) {
+				return result;
+			}
+			bool hit;
+			highp vec3 v;
+			highp vec3 p = pos;
+			highp float dist = Infinity;
+			highp float jump = 2.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w))-GILowResLevel);
+			for (highp float i=jump*0.5; i<1.0; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				p = pos-(dir*dist);
+				v = abs(uReflectionPosition[0].xyz-p);
+				hit = textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[0].w == 0.0;
+				if (hit) {
+					v = abs(uReflectionPosition[1].xyz-p);
+					hit = textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[1].w == 0.0;
+					if (hit) {
+						v = abs(uReflectionPosition[2].xyz-p);
+						hit = textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[2].w == 0.0;
+						if (hit) {
+							v = abs(uReflectionPosition[3].xyz-p);
+							hit = textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[2].w == 0.0;
 							if (hit) {
-								dist = i/(1.0-i);
 								break;
 							}
 						}
@@ -1545,51 +2239,41 @@ var KhawnEngine = function() {
 				}
 			}
 			if (hit) {
-				for (lowp int i=0; i<8; i++) {
-					v = abs(uReflectionPosition[0].xyz-p);
-					dtmp = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w-max(v.x,max(v.y,v.z));
-					v = abs(uReflectionPosition[1].xyz-p);
-					dtmp = max(texture(uReflectionCubemap[1],uReflectionPosition[1].xyz-p).w-max(v.x,max(v.y,v.z)),dtmp);
-					v = abs(uReflectionPosition[2].xyz-p);
-					dtmp = max(texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w-max(v.x,max(v.y,v.z)),dtmp);
-					v = abs(uReflectionPosition[3].xyz-p);
-					dtmp = max(texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w-max(v.x,max(v.y,v.z)),dtmp);
-					dist += min(dtmp,0.01);
-					p = pos-(dir*dist);
-				}
+				highp vec4 weights;
+				v = abs(uReflectionPosition[0].xyz-p);
+				highp float dist2 = max(v.x,max(v.y,v.z));
+				weights.x = abs(dist2-textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,GILowResLevel).w);
+				v = abs(uReflectionPosition[1].xyz-p);
+				dist2 = max(v.x,max(v.y,v.z));
+				weights.y = abs(dist2-textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,GILowResLevel).w);
+				v = abs(uReflectionPosition[2].xyz-p);
+				dist2 = max(v.x,max(v.y,v.z));
+				weights.z = abs(dist2-textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,GILowResLevel).w);
+				v = abs(uReflectionPosition[3].xyz-p);
+				dist2 = max(v.x,max(v.y,v.z));
+				weights.w = abs(dist2-textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,GILowResLevel).w);
+				weights -= min(min(weights.x,weights.y),min(weights.z,weights.w));
+				weights = exp(-min(weights*50.0,vec4(25.0)));
+				weights /= weights.x+weights.y+weights.z+weights.w;
+				result += weights.x*textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,GILowResLevel).rgb;
+				result += weights.y*textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,GILowResLevel).rgb;
+				result += weights.z*textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,GILowResLevel).rgb;
+				result += weights.w*textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,GILowResLevel).rgb;
 			}
-			highp float count = 0.0;
-			highp float s0 = texture(uReflectionCubemap[0],uReflectionPosition[0].xyz-p).w;
-			highp float s1 = texture(uReflectionCubemap[1],uReflectionPosition[1].xyz-p).w;
-			highp float s2 = texture(uReflectionCubemap[2],uReflectionPosition[2].xyz-p).w;
-			highp float s3 = texture(uReflectionCubemap[3],uReflectionPosition[3].xyz-p).w;
-			highp vec3 result;
-			//rough = log2(rough*(dist*rough+1.0)+1.0);
-			v = abs(uReflectionPosition[0].xyz-p);
-			if (s0+0.5 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,rough*uReflectionPosition[0].w).rgb;
-				count++;
-			}
-			v = abs(uReflectionPosition[1].xyz-p);
-			if (s1+0.5 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,rough*uReflectionPosition[1].w).rgb;
-				count++;
-			}
-			v = abs(uReflectionPosition[2].xyz-p);
-			if (s2+0.5 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,rough*uReflectionPosition[2].w).rgb;
-				count++;
-			}
-			v = abs(uReflectionPosition[3].xyz-p);
-			if (s3+0.5 >= max(v.x,max(v.y,v.z))) {
-				result += textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,rough*uReflectionPosition[3].w).rgb;
-				count++;
-			}
-			if (count == 0.0) {
-				return vec3(0);
-			} else {
-				return result/count;
-			}
+			return result;
+		}
+		highp vec3 RealGI(highp vec3 pos, highp vec3 norm) {
+			// highp vec3 result;
+			// highp vec3 addRnd = (rnd(pos*uRandom)-0.5);
+			// highp vec3 v0 = normalize(addRnd);
+			// highp vec3 v1 = (rnd(pos+addRnd)-0.5);
+			// v1 = normalize(v1-v0*dot(v0,v1));
+			// highp mat3 rot = mat3(v0,v1,cross(v1,v0));
+			// result += lowResRayMarch(pos,normalize((fibSphere[0]*rot)-norm));
+			// result += lowResRayMarch(pos,normalize((fibSphere[1]*rot)-norm));
+			// result += lowResRayMarch(pos,normalize((fibSphere[2]*rot)-norm));
+			// return result/3.0;
+			return lowResRayMarch(pos,normalize(rnd(pos*uRandom)-0.5)-norm);
 		}
 		highp float FresnelReflectionCoefficient(highp vec3 dir, highp vec3 norml, highp float ior) {
 			highp float cosi = max(dot(dir,norml),0.0);
@@ -1600,7 +2284,7 @@ var KhawnEngine = function() {
 			return max(((val-1.0)/d)+1.0,0.0);
 		}
 		highp float exponentalSpecular(highp float val, highp float d) {
-			highp float k = min(1.0/(d*d),1000000.0);
+			highp float k = min(1.0/(d*d*d),1000000.0);
 			return pow(max(val,0.0),k)*(1.0+k)*0.1;
 		}
         void main(void) {
@@ -1610,61 +2294,352 @@ var KhawnEngine = function() {
 			highp vec3 ViewDir = normalize(PositionToCamera);
 			highp vec3 refl = reflect(ViewDir,normal);
 			highp float fresnel = FresnelReflectionCoefficient(ViewDir,normal,IOR);
-			highp vec3 ReflectedLight;
 			highp vec3 DirectLight;
-			highp float reflection = mix(fresnel,1.0,Reflectivity);
+			highp vec3 ReflectedLight;
 			highp vec3 position = WorldPosition+(normal*0.0625);
-			for (lowp int i = 0; i<24; i++) {
-				highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
-				highp float div = (dot(lig,lig)+LightPositions[i].w);
-				if (div == 0.0) {
-					break;
+			highp vec3 refl2 = normalize(refl+(normalize(rnd((position*uRandom)+refl)-0.5)*Roughness));
+			if (dot(refl2,normal) > 0.0) {
+				refl2 -= normal*(2.0*dot(refl2,normal));
+			}
+			// highp vec3 addRnd = (rnd(position*uRandom)-0.5);
+			// position += (addRnd-normal*dot(normal,addRnd))*0.125;
+			if (uIsReflection) {
+				for (lowp int i = 0; i<24; i++) {
+					highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+					highp float div = (dot(lig,lig)+LightPositions[i].w);
+					if (div == 0.0) {
+						break;
+					}
+					if (dot(lig,normal) > 0.0  && div < 10000.0) {
+						highp float ligdist = length(lig);
+						highp vec3 lignorm = lig/ligdist;
+						if (LightPositions[i].w == 0.0) {
+							ligdist = Infinity;
+						}
+						DirectLight += LightColors[i]*dot(lignorm,normal)*clamp(lowResShadow(position,-lignorm,ligdist)*8.0,0.0,1.0)/div;
+					}
 				}
-				highp vec3 lignorm = normalize(lig);
-				DirectLight += LightColors[i]*max(dot(lignorm,normal)/div,0.0);
+				highp vec3 Alb = uColor*texture(uTexture,UV).rgb;
+				// color = vec4(mix(Alb*DirectLight,vec3(0.0),Reflectivity*(1.0-Roughness)),1);
+				// DirectLight += RealGI(position,normal,refl,1.0);
+				color = vec4(Alb*DirectLight*(1.0-(Reflectivity*(1.0-(Roughness*0.025)))),1);
+				color2 = vec4(0.0);
+			} else {
+				for (lowp int i = 0; i<24; i++) {
+					highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+					highp float div = (dot(lig,lig)+LightPositions[i].w);
+					if (div == 0.0) {
+						break;
+					}
+					if (dot(lig,normal) > 0.0  && div < 10000.0) {
+						highp float ligdist = length(lig);
+						highp vec3 lignorm = lig/ligdist;
+						if (LightPositions[i].w == 0.0) {
+							ligdist = Infinity;
+						}
+						highp float shadow = clamp(Shadow(position,-lignorm,ligdist)*8.0,0.0,1.0);
+						DirectLight += LightColors[i]*dot(lignorm,normal)*shadow/div;
+						ReflectedLight += LightColors[i]*exponentalSpecular(-dot(lignorm,refl),Roughness)*shadow/div;
+					}
+				}
+				highp vec3 Alb = uColor*texture(uTexture,UV).rgb;
+				highp vec3 RMReflectedLight = RayMarch(position,refl2);
+				RMReflectedLight += fwidth(RMReflectedLight)*0.5;
+				ReflectedLight += RMReflectedLight;
+				highp vec3 GI = RealGI(position,normal);
+				GI += fwidth(GI)*0.5;
+				highp float factor = mix(fresnel,1.0,Reflectivity);
+				color2 = vec4(GI*Alb*(1.0-factor),1.0);
+				color = vec4(mix(Alb*DirectLight,ReflectedLight,factor),1);
 			}
-			if (!all(equal(ReflectionResolutions,ivec4(0)))) {
-				ReflectedLight += RayMarch(position,refl,Roughness);
-			}
-			color = vec4(mix(uColor*texture(uTexture,UV).rgb*DirectLight,ReflectedLight,reflection),1);
-			// color = vec4(vec3(fresnel),1.0);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'},{Name:'Reflectivity',Type:'float'},{Name:'Roughness',Type:'float'},{Name:'IOR',Type:'float'}]);
 	this.DiffuseShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
-        layout(location = 0) out highp vec4 color;
-		layout(location = 1) out highp vec4 position;
+		#pragma optimize(off)
+		// highp vec3[24] fibSphere = vec3[24](vec3(0.08330922277203934,1.9982641400478363,0), vec3(-0.18386253656195853,1.984395334458658,-0.16843314468272927), vec3(0.03616444827285966,1.9567539787075074,0.4120752352343671), vec3(0.3499118507917456,1.9155319155950687,-0.45639804667875356), vec3(-0.721346997383237,1.8610152438246286,0.12759612697314385), vec3(0.7466459289412188,1.7935823323550246,0.4749550229857708), vec3(-0.26768567859714737,1.7137011943586609,-0.9957773817112359), vec3(-0.5393508864777872,1.6219262390104359,1.038487311653391), vec3(1.222186501017631,1.5188944236515596,-0.4463405499509058), vec3(-1.3153906106679338,1.40532083303388,-0.542974122410637), vec3(0.6506404788955875,1.2819937163266504,1.3903809113050654), vec3(0.48976880487264574,1.1497690163310286,-1.5614601265670538), vec3(-1.493781494289108,1.0095644288718937,0.8656769092888913), vec3(1.7624458009727377,0.8623530335973324,0.38746876529475605), vec3(-1.0755223265031053,0.7091565403907663,-1.5298198346257468), vec3(-0.2470735207029002,0.5510381982685012,1.906649306877507), vec3(1.5000777814051125,0.38909541597797437,-1.2642671422605438), vec3(-1.9856682975967084,0.22445214551289128,-0.08211361820094092), vec3(1.417057403081286,0.05825108140691417,1.410161383632188), vec3(-0.09224721287263171,-0.10835427005387264,-1.9949310273486458), vec3(-1.2693174548472759,-0.2742075966566752,1.5210665313377336), vec3(1.93398701596605,-0.438157805562027,-0.26021521765608185), vec3(-1.5663385360298747,-0.5990670123791483,-1.0898175559362722), vec3(0.4064104272907257,-0.7558184385690411,1.8065350958418789));
+        // highp vec3[16] fibSphere = vec3[16](vec3(0.06245931784238083,0.9980475107000991,0),vec3(-0.1374479898036949,0.9824733131012553,-0.12591361778126356),vec3(0.026878034943095843,0.9515679480481722,0.3062613450714744),vec3(0.25778109935695087,0.9058136834259364,-0.3362297960214997),vec3(-0.5251503343856905,0.8459244992310679,0.09289169981900676),vec3(0.5354530838883197,0.7728349461524715,0.34061142223946994),vec3(-0.18847497230142526,0.6876855622205048,-0.7011175025125569),vec3(-0.3715284452860901,0.5918050750924775,0.7153554133702267),vec3(0.8205675405373889,0.4866896677019633,-0.29966994972564903),vec3(-0.8572721931828501,0.37397963082453317,-0.3538694992844283),vec3(0.4097855639616461,0.2554337668888117,0.8756879480166595),vec3(0.2966289744327563,0.13290194445282522,-0.9456999125978756),vec3(-0.8651814340962697,0.008296231623858378,0.5013903256306063),vec3(0.9700322803559933,-0.11643894112485227,0.21325887568182147),vec3(-0.5584113355749855,-0.2393571231413216,-0.7942826624715356),vec3(-0.1199665641708251,-0.3585402173062328,0.9257736959187416));
+		// highp vec3[12] fibSphere = vec3[12](vec3(0.08323691620031028,0.9965297867005595,0),vec3(-0.18242797986764214,0.9689124217106447,-0.16711897323830374),vec3(0.03538246402284002,0.9144430665938302,0.4031649280358402),vec3(0.3351336589182639,0.834631259831657,-0.43712251231419985),vec3(-0.6712188791086642,0.7316888688738209,0.11872916867500176),vec3(0.6695854733368877,0.6084687914680451,0.42593546894527656),vec3(-0.22936663356231998,0.4683858917731504,-0.8532324441769424),vec3(-0.437393677405931,0.3153223623952687,0.8421749098250215),vec3(0.9281861305289453,0.15352013509990164,-0.3389720861850006),vec3(-0.9242729143744025,-0.012536678120480762,-0.3815264230109782),vec3(0.4170585027659529,-0.17824605564949209,0.8912297957968078),vec3(0.28156049850402265,-0.33901560454258944,-0.8976592368815624));
+		// highp vec3[8] fibSphere = vec3[8](vec3(0.12467473338522801,0.992197667229329,0),vec3(-0.27007796384308785,0.9305076219123143,-0.24741353845224667),vec3(0.05115255311673758,0.8109631195052179,0.5828569593922723),vec3(0.46700329425221376,0.6409968581633252,-0.6091231000235717),vec3(-0.8884750672724862,0.4311765167986662,0.15715872930423194),vec3(0.8276337105080087,0.19454770798898718,0.526472820330715),vec3(-0.25922303458319945,-0.05417713502693632,-0.9642967677959677),vec3(-0.4397448389230519,-0.29953350618957414,0.8467019282547545));
+		// highp vec3[6] fibSphere = vec3[6](vec3(0.16589613269341513,0.986143231562925,0),vec3(-0.35351347152267554,0.8775825618903728,-0.32384729814824237),vec3(0.06471049780938339,0.6724122440830567,0.737342746272349),vec3(0.5594260559098868,0.39321867977635777,-0.7296722263071593),vec3(-0.9822467648435449,0.0707372016677029,0.17374562226028226),vec3(0.81484372749171,-0.25953145961883317,0.518336880065015));
+		// highp vec3[4] fibSphere = vec3[4](vec3(0.2474039592545231,0.9689124217106447,0),vec3(-0.5026192077331032,0.7316888688738209,-0.46044036658822185),vec3(0.08296566809241174,0.3153223623952687,0.9453509960281666),vec3(0.5986952887351837,-0.17824605564949209,-0.7808919866996287));
+		highp vec3[3] fibSphere = vec3[3](vec3(0.3271946967961522,0.9449569463147377,0),vec3(-0.6204745160032578,0.5403023058681398,-0.5684054831404197),vec3(0.0870242620954784,-0.09572354801437566,0.9915965813587081));
+		layout(location = 0) out highp vec4 color;
+		layout(location = 1) out highp vec4 color2;
+		layout(location = 2) out highp vec4 position;
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
+		uniform samplerCube uReflectionCubemap[4];
+		uniform highp vec4 uReflectionPosition[4];
 		uniform highp vec3 LightColors[24];
 		uniform highp vec4 LightPositions[24];
+		uniform bool uIsReflection;
+		uniform highp mat3 uRandom;
+		in highp vec3 PositionToCamera;
 		in highp vec3 CameraSpacePosition;
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
 		in highp vec2 UV;
+		const highp float Infinity = 1.0/0.0;
+		const highp float GILowResLevel = 2.0;
+		const highp float ShadowLowResLevel = 2.0;
 		highp vec3 fastNormalize(highp vec3 vect) {
-			vect = mix(vect,vect/dot(vect,vect),0.8);
-			vect = mix(vect,vect/dot(vect,vect),0.7);
-			vect = mix(vect,vect/dot(vect,vect),0.5);
+			highp vec3 v = abs(vect);
+			vect /= max(v.x, max(v.y, v.z));
+			vect = mix(vect,vect/dot(vect,vect),0.577);
+			// vect = mix(vect,vect/dot(vect,vect),0.7);
+			// vect = mix(vect,vect/dot(vect,vect),0.5);
 			return vect;
+		}
+		highp vec3 rnd(highp vec3 p) {
+			highp uvec3 x = floatBitsToUint(p);
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			x = ((x>>8U)^x.yzx)*1103515245U;
+			return vec3(x)*(1.0/float(0xffffffffU));
+		}
+		highp float Shadow(highp vec3 pos, highp vec3 dir, highp float LightDistance) {
+			highp vec3 p = pos;
+			highp vec3 v;
+			bool hit;
+			bvec4 hits;
+			if (uReflectionPosition[0].w == 0.0 && uReflectionPosition[1].w == 0.0 && uReflectionPosition[2].w == 0.0 && uReflectionPosition[3].w == 0.0) {
+				return Infinity;
+			}
+			highp float dist;
+			highp float distmp = Infinity;
+			highp float minDist = Infinity;
+			highp float minDistDist = 1.0;
+			highp float jump = 4.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w)));
+			for (highp float i=jump*0.5; i<1.0; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				if (dist >= LightDistance) {
+					break;
+				}
+				p = pos-(dir*dist);
+				v = abs(uReflectionPosition[0].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.x = distmp < 0.0 || uReflectionPosition[0].w == 0.0;
+				if (!hits.x && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[1].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.y = distmp < 0.0 || uReflectionPosition[1].w == 0.0;
+				if (!hits.y && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[2].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.z = distmp < 0.0 || uReflectionPosition[2].w == 0.0;
+				if (!hits.z && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[3].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,0.0).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.w = distmp < 0.0 || uReflectionPosition[3].w == 0.0;
+				if (!hits.w && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				hit = all(hits);
+				if (hit) {
+					break;
+				}
+			}
+			if (hit) {
+				return 0.0;
+			} else {
+				return minDist*(minDistDist*minDistDist);
+			}
+		}
+		highp float lowResShadow(highp vec3 pos, highp vec3 dir, highp float LightDistance) {
+			highp vec3 p = pos;
+			highp vec3 v;
+			bool hit;
+			bvec4 hits;
+			if (uReflectionPosition[0].w == 0.0 && uReflectionPosition[1].w == 0.0 && uReflectionPosition[2].w == 0.0 && uReflectionPosition[3].w == 0.0) {
+				return Infinity;
+			}
+			highp float dist;
+			highp float distmp = Infinity;
+			highp float minDist = Infinity;
+			highp float minDistDist = 1.0;
+			highp float jump = 4.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w))-ShadowLowResLevel);
+			for (highp float i=jump*0.5; i<1.0; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				if (dist >= LightDistance) {
+					break;
+				}
+				p = pos-(dir*dist);
+				v = abs(uReflectionPosition[0].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.x = distmp < 0.0 || uReflectionPosition[0].w == 0.0;
+				if (!hits.x && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[1].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.y = distmp < 0.0 || uReflectionPosition[1].w == 0.0;
+				if (!hits.y && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[2].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.z = distmp < 0.0 || uReflectionPosition[2].w == 0.0;
+				if (!hits.z && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				v = abs(uReflectionPosition[3].xyz-p);
+				distmp = (textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,ShadowLowResLevel).w-max(v.x,max(v.y,v.z)))/(dist*dist);
+				hits.w = distmp < 0.0 || uReflectionPosition[3].w == 0.0;
+				if (!hits.w && distmp < minDist) {
+					minDist = distmp;
+					minDistDist = dist;
+				}
+				hit = all(hits);
+				if (hit) {
+					break;
+				}
+			}
+			if (hit) {
+				return 0.0;
+			} else {
+				return minDist*(minDistDist*minDistDist);
+			}
+		}
+		highp vec3 lowResRayMarch(highp vec3 pos, highp vec3 dir) {
+			highp vec3 result = vec3(0.0);
+			if (uReflectionPosition[0].w == 0.0 && uReflectionPosition[1].w == 0.0 && uReflectionPosition[2].w == 0.0 && uReflectionPosition[3].w == 0.0) {
+				return result;
+			}
+			bool hit;
+			highp vec3 v;
+			highp vec3 p = pos;
+			highp float dist = Infinity;
+			highp float jump = 2.0/exp2(max(max(uReflectionPosition[0].w,uReflectionPosition[1].w),max(uReflectionPosition[2].w,uReflectionPosition[3].w))-GILowResLevel);
+			for (highp float i=jump*0.5; i<1.0; i+=jump) {
+				dist = 8.0*i/(1.0-i);
+				p = pos-(dir*dist);
+				v = abs(uReflectionPosition[0].xyz-p);
+				hit = textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[0].w == 0.0;
+				if (hit) {
+					v = abs(uReflectionPosition[1].xyz-p);
+					hit = textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[1].w == 0.0;
+					if (hit) {
+						v = abs(uReflectionPosition[2].xyz-p);
+						hit = textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[2].w == 0.0;
+						if (hit) {
+							v = abs(uReflectionPosition[3].xyz-p);
+							hit = textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,GILowResLevel).w < max(v.x,max(v.y,v.z)) || uReflectionPosition[2].w == 0.0;
+							if (hit) {
+								break;
+							}
+						}
+					}
+				}
+			}
+			if (hit) {
+				highp vec4 weights;
+				v = abs(uReflectionPosition[0].xyz-p);
+				highp float dist2 = max(v.x,max(v.y,v.z));
+				weights.x = abs(dist2-textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,GILowResLevel).w);
+				v = abs(uReflectionPosition[1].xyz-p);
+				dist2 = max(v.x,max(v.y,v.z));
+				weights.y = abs(dist2-textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,GILowResLevel).w);
+				v = abs(uReflectionPosition[2].xyz-p);
+				dist2 = max(v.x,max(v.y,v.z));
+				weights.z = abs(dist2-textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,GILowResLevel).w);
+				v = abs(uReflectionPosition[3].xyz-p);
+				dist2 = max(v.x,max(v.y,v.z));
+				weights.w = abs(dist2-textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,GILowResLevel).w);
+				weights -= min(min(weights.x,weights.y),min(weights.z,weights.w));
+				weights = exp(-min(weights*50.0,vec4(25.0)));
+				weights /= weights.x+weights.y+weights.z+weights.w;
+				result += weights.x*textureLod(uReflectionCubemap[0],uReflectionPosition[0].xyz-p,GILowResLevel).rgb;
+				result += weights.y*textureLod(uReflectionCubemap[1],uReflectionPosition[1].xyz-p,GILowResLevel).rgb;
+				result += weights.z*textureLod(uReflectionCubemap[2],uReflectionPosition[2].xyz-p,GILowResLevel).rgb;
+				result += weights.w*textureLod(uReflectionCubemap[3],uReflectionPosition[3].xyz-p,GILowResLevel).rgb;
+			}
+			return result;
+		}
+		highp vec3 RealGI(highp vec3 pos, highp vec3 norm) {
+			// highp vec3 result;
+			// highp vec3 addRnd = (rnd(pos*uRandom)-0.5);
+			// highp vec3 v0 = normalize(addRnd);
+			// highp vec3 v1 = (rnd(pos+addRnd)-0.5);
+			// v1 = normalize(v1-v0*dot(v0,v1));
+			// highp mat3 rot = mat3(v0,v1,cross(v1,v0));
+			// result += lowResRayMarch(pos,normalize((fibSphere[0]*rot)-norm));
+			// result += lowResRayMarch(pos,normalize((fibSphere[1]*rot)-norm));
+			// result += lowResRayMarch(pos,normalize((fibSphere[2]*rot)-norm));
+			// return result/3.0;
+			return lowResRayMarch(pos,normalize(rnd(pos*uRandom)-0.5)-norm);
 		}
         void main(void) {
 			position = vec4(WorldPosition,CameraSpacePosition.z);
 			highp vec3 normal = normalize(Normal);
 			highp vec3 DirectLight;
-			for (lowp int i = 0; i<24; i++) {
-				highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
-				highp float div = (dot(lig,lig)+LightPositions[i].w);
-				if (div == 0.0) {
-					break;
+			highp vec3 position = WorldPosition+(normal*0.0625);
+			// highp vec3 addRnd = (rnd(position*uRandom)-0.5);
+			// position += (addRnd-normal*dot(normal,addRnd))*0.025;
+			if (uIsReflection) {
+				for (lowp int i = 0; i<24; i++) {
+					highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+					highp float div = (dot(lig,lig)+LightPositions[i].w);
+					if (div == 0.0) {
+						break;
+					}
+					if (dot(lig,normal) > 0.0  && div < 10000.0) {
+						highp float ligdist = length(lig);
+						highp vec3 lignorm = lig/ligdist;
+						if (LightPositions[i].w == 0.0) {
+							ligdist = Infinity;
+						}
+						DirectLight += LightColors[i]*dot(lignorm,normal)*clamp(lowResShadow(position,-lignorm,ligdist)*8.0,0.0,1.0)/div;
+					}
 				}
-				DirectLight += LightColors[i]*max(dot(normalize(lig),normal)/div,0.0);
+				highp vec3 Alb = uColor*texture(uTexture,UV).rgb;
+				// DirectLight += RealGI(position,normal);
+				color = vec4(Alb*DirectLight,1);
+				color2 = vec4(0.0);
+			} else {
+				for (lowp int i = 0; i<24; i++) {
+					highp vec3 lig = (LightPositions[i].xyz-(LightPositions[i].w*WorldPosition));
+					highp float div = (dot(lig,lig)+LightPositions[i].w);
+					if (div == 0.0) {
+						break;
+					}
+					if (dot(lig,normal) > 0.0 && div < 10000.0) {
+						highp float ligdist = length(lig);
+						highp vec3 lignorm = lig/ligdist;
+						if (LightPositions[i].w == 0.0) {
+							ligdist = Infinity;
+						}
+						DirectLight += LightColors[i]*dot(lignorm,normal)*clamp(Shadow(position,-lignorm,ligdist)*8.0,0.0,1.0)/div;
+					}
+				}
+				highp vec3 Alb = uColor*texture(uTexture,UV).rgb;
+				highp vec3 GI = RealGI(position,normal);
+				GI += fwidth(GI)*0.5;
+				// DirectLight += GI+((dFdx(GI)+dFdy(GI))*GI);
+				// DirectLight += GI+(fwidth(GI)*0.5);
+				// DirectLight += GI;
+				// color2 = vec4(0.0);
+				color2 = vec4(GI*Alb,1.0);
+				color = vec4(uColor*texture(uTexture,UV).rgb*DirectLight,1);
 			}
-			color = vec4(uColor*texture(uTexture,UV).rgb*DirectLight,1);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
 	this.ToonShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
         layout(location = 0) out highp vec4 color;
-		layout(location = 1) out highp vec4 position;
+		layout(location = 1) out highp vec4 color2;
+		layout(location = 2) out highp vec4 position;
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		uniform highp vec3 LightColors[8];
@@ -1692,15 +2667,16 @@ var KhawnEngine = function() {
 				DirectLight += LightColors[i]*max(sign(dot(lig,normal)),0.0)/div;
 			}
 			color = vec4(uColor*texture(uTexture,UV).rgb*DirectLight,1);
+			color2 = vec4(0.0);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
 	this.UnlitShader = new this.Shader(self.DefaultVertexShader,new self.FragmentShader(`#version 300 es
         layout(location = 0) out highp vec4 color;
-		layout(location = 1) out highp vec4 position;
+		layout(location = 1) out highp vec4 color2;
+		layout(location = 2) out highp vec4 position;
         uniform highp vec3 uColor;
 		uniform sampler2D uTexture;
 		in highp vec3 CameraSpacePosition;
-		in highp vec3 PositionToCamera;
 		in highp vec3 WorldPosition;
 		in highp vec3 Normal;
 		in highp vec2 UV;
@@ -1712,8 +2688,8 @@ var KhawnEngine = function() {
 		}
         void main(void) {
 			position = vec4(WorldPosition,CameraSpacePosition.z);
-			//color = vec4(uColor*texture(uTexture,UV).rgb,1);
-			color = vec4(uColor*texture(uTexture,UV).rgb*dot(normalize(PositionToCamera),normalize(Normal)),1.0);
+			color = vec4(uColor*texture(uTexture,UV).rgb,1.0);
+			color2 = vec4(0.0);
         }
     `),[{Name:'uColor',Type:'vec3'},{Name:'uTexture',Type:'sampler2D'}]);
 	//,{Name:'uCubemap',Type:'samplerCube',Value:8}
@@ -1726,8 +2702,17 @@ var KhawnEngine = function() {
         ct.fillRect(0,0,1,1);
         return cvs;
 	})());
+	this.DefaultNormalMap = new this.Texture((function(){
+		var cvs = document.createElement("canvas");
+        cvs.width = 1;
+        cvs.height = 1;
+        var ct = cvs.getContext('2d');
+        ct.fillStyle="#8080FF";
+        ct.fillRect(0,0,1,1);
+        return cvs;
+	})());
 	this.CubemapTest = null;
-    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:0,IOR:1.3});
+    this.DefaultMaterial = new this.Material(this.DefaultShader,{uColor:[1,1,1],uTexture:this.DefaultTexture,Reflectivity:0,Roughness:0.1,IOR:1.45});
 	//this.DefaultMaterial = new this.Material(this.DiffuseShader,{uColor:[1,1,1],uTexture:this.DefaultTexture});
 	this.DiffuseMaterial = new this.Material(this.DiffuseShader,{uColor:[1,1,1],uTexture:this.DefaultTexture});
 	this.XaxisMaterial = new this.Material(this.UnlitShader,{uColor:[1,0,0],uTexture:this.DefaultTexture});
@@ -1779,9 +2764,229 @@ var KhawnEngine = function() {
 		}
 		return MeshData;
 	})());
+	this.ArrowMesh = (function(){
+		var decoder = new self.OBJdecoder();
+		decoder.parse(`v 0.000000 0.000000 0.000000
+		v 0.000000 0.000000 -0.125000
+		v -0.047835 0.000000 -0.115485
+		v -0.088388 0.000000 -0.088388
+		v -0.115485 0.000000 -0.047835
+		v -0.125000 0.000000 0.000000
+		v -0.115485 0.000000 0.047835
+		v -0.088388 0.000000 0.088388
+		v -0.047835 0.000000 0.115485
+		v 0.000000 0.000000 0.125000
+		v 0.047835 0.000000 0.115485
+		v 0.088388 0.000000 0.088388
+		v 0.115485 0.000000 0.047835
+		v 0.125000 0.000000 -0.000000
+		v 0.115485 0.000000 -0.047835
+		v 0.088388 0.000000 -0.088388
+		v 0.047835 0.000000 -0.115485
+		v 0.000000 1.500000 -0.125000
+		v -0.047835 1.500000 -0.115485
+		v -0.088388 1.500000 -0.088388
+		v -0.115485 1.500000 -0.047835
+		v -0.125000 1.500000 0.000000
+		v -0.115485 1.500000 0.047835
+		v -0.088388 1.500000 0.088388
+		v -0.047835 1.500000 0.115485
+		v 0.000000 1.500000 0.125000
+		v 0.047835 1.500000 0.115485
+		v 0.088388 1.500000 0.088388
+		v 0.115485 1.500000 0.047835
+		v 0.125000 1.500000 -0.000000
+		v 0.115485 1.500000 -0.047835
+		v 0.088388 1.500000 -0.088388
+		v 0.047835 1.500000 -0.115485
+		v -0.095671 1.500000 -0.230970
+		v 0.000000 1.500000 -0.250000
+		v 0.000000 1.875000 -0.000000
+		v -0.176777 1.500000 -0.176777
+		v -0.230970 1.500000 -0.095671
+		v -0.250000 1.500000 0.000000
+		v -0.230970 1.500000 0.095671
+		v -0.176777 1.500000 0.176777
+		v -0.095671 1.500000 0.230970
+		v 0.000000 1.500000 0.250000
+		v 0.095671 1.500000 0.230970
+		v 0.176777 1.500000 0.176777
+		v 0.230970 1.500000 0.095671
+		v 0.250000 1.500000 -0.000000
+		v 0.230970 1.500000 -0.095671
+		v 0.176777 1.500000 -0.176777
+		v 0.095671 1.500000 -0.230970
+		vn -0.0000 -1.0000 -0.0000
+		vn -0.9239 -0.0000 -0.3827
+		vn -1.0000 -0.0000 -0.0000
+		vn -0.0000 0.0001 -1.0000
+		vn -0.3827 -0.0000 -0.9239
+		vn -0.0000 -0.0000 -1.0000
+		vn -0.3827 -0.0000 0.9239
+		vn -0.0000 -0.0000 1.0000
+		vn 0.9239 -0.0000 0.3827
+		vn 1.0000 -0.0000 -0.0000
+		vn 0.3827 -0.0000 -0.9239
+		vn -0.0000 -0.0001 -1.0000
+		vn -0.9239 -0.0000 0.3827
+		vn 0.3827 -0.0000 0.9239
+		vn 1.0000 0.0001 -0.0000
+		vn 0.9239 -0.0000 -0.3827
+		vn -0.7071 -0.0000 -0.7071
+		vn -0.7071 -0.0000 0.7071
+		vn 0.7071 -0.0000 0.7071
+		vn 0.7071 -0.0000 -0.7071
+		vn 0.7071 0.0001 0.7071
+		vn -0.0001 1.0000 -0.0000
+		vn -0.0000 0.5547 -0.8321
+		vn -0.3184 0.5547 -0.7687
+		vn 0.0001 1.0000 -0.0001
+		vn -0.5883 0.5547 -0.5884
+		vn -0.0000 1.0000 -0.0001
+		vn -0.5884 0.5547 -0.5883
+		vn -0.7687 0.5547 -0.3184
+		vn -0.0000 1.0000 0.0001
+		vn -0.8321 0.5547 -0.0000
+		vn -0.7687 0.5547 0.3184
+		vn -0.5884 0.5547 0.5883
+		vn 0.0001 1.0000 0.0001
+		vn -0.5883 0.5547 0.5884
+		vn -0.3184 0.5547 0.7687
+		vn 0.0001 1.0000 -0.0000
+		vn -0.0000 0.5547 0.8321
+		vn 0.3184 0.5547 0.7687
+		vn -0.0001 1.0000 0.0001
+		vn 0.5883 0.5547 0.5884
+		vn 0.5884 0.5547 0.5883
+		vn 0.7687 0.5547 0.3184
+		vn 0.8321 0.5547 -0.0000
+		vn 0.7687 0.5547 -0.3184
+		vn 0.5884 0.5547 -0.5883
+		vn -0.0001 1.0000 -0.0001
+		vn 0.5883 0.5547 -0.5884
+		vn 0.3184 0.5547 -0.7687
+		vt 0.500000 0.500000
+		vt 0.500000 1.000000
+		vt 0.308658 0.961940
+		vt 0.146447 0.853553
+		vt 0.038060 0.691342
+		vt 0.000000 0.500000
+		vt 0.038060 0.308658
+		vt 0.146447 0.146447
+		vt 0.308658 0.038060
+		vt 0.500000 0.000000
+		vt 0.691342 0.038060
+		vt 0.853553 0.146447
+		vt 0.961940 0.308658
+		vt 1.000000 0.500000
+		vt 0.961940 0.691342
+		vt 0.853553 0.853553
+		vt 0.691342 0.961940
+		vt 0.500000 1.000000
+		vt 0.308658 0.961940
+		vt 0.146447 0.853553
+		vt 0.038060 0.691342
+		vt 0.000000 0.500000
+		vt 0.038060 0.308658
+		vt 0.146447 0.146447
+		vt 0.308658 0.038060
+		vt 0.500000 0.000000
+		vt 0.691342 0.038060
+		vt 0.853553 0.146447
+		vt 0.961940 0.308658
+		vt 1.000000 0.500000
+		vt 0.961940 0.691342
+		vt 0.853553 0.853553
+		vt 0.691342 0.961940
+		vt 0.308658 0.961940
+		vt 0.500000 1.000000
+		vt 0.500000 0.500000
+		vt 0.146447 0.853553
+		vt 0.038060 0.691342
+		vt 0.000000 0.500000
+		vt 0.038060 0.308658
+		vt 0.146447 0.146447
+		vt 0.308658 0.038060
+		vt 0.500000 0.000000
+		vt 0.691342 0.038060
+		vt 0.853553 0.146447
+		vt 0.961940 0.308658
+		vt 1.000000 0.500000
+		vt 0.961940 0.691342
+		vt 0.853553 0.853553
+		vt 0.691342 0.961940
+		s 0
+		f 1/1/1 3/3/1 2/2/1
+		f 1/1/1 4/4/1 3/3/1
+		f 1/1/1 5/5/1 4/4/1
+		f 1/1/1 6/6/1 5/5/1
+		f 1/1/1 7/7/1 6/6/1
+		f 1/1/1 8/8/1 7/7/1
+		f 1/1/1 9/9/1 8/8/1
+		f 1/1/1 10/10/1 9/9/1
+		f 1/1/1 11/11/1 10/10/1
+		f 1/1/1 12/12/1 11/11/1
+		f 1/1/1 13/13/1 12/12/1
+		f 1/1/1 14/14/1 13/13/1
+		f 1/1/1 15/15/1 14/14/1
+		f 1/1/1 16/16/1 15/15/1
+		f 1/1/1 17/17/1 16/16/1
+		f 1/1/1 2/2/1 17/17/1
+		f 27/27/1 28/28/1 45/45/1 44/44/1
+		f 23/23/1 24/24/1 41/41/1 40/40/1
+		f 19/19/1 20/20/1 37/37/1 34/34/1
+		f 30/30/1 31/31/1 48/48/1 47/47/1
+		f 26/26/1 27/27/1 44/44/1 43/43/1
+		f 22/22/1 23/23/1 40/40/1 39/39/1
+		f 33/33/1 18/18/1 35/35/1 50/50/1
+		f 29/29/1 30/30/1 47/47/1 46/46/1
+		f 25/25/1 26/26/1 43/43/1 42/42/1
+		f 18/18/1 19/19/1 34/34/1 35/35/1
+		f 21/21/1 22/22/1 39/39/1 38/38/1
+		f 32/32/1 33/33/1 50/50/1 49/49/1
+		f 28/28/1 29/29/1 46/46/1 45/45/1
+		f 24/24/1 25/25/1 42/42/1 41/41/1
+		f 20/20/1 21/21/1 38/38/1 37/37/1
+		f 31/31/1 32/32/1 49/49/1 48/48/1
+		f 5/5/2 6/6/3 22/22/3 21/21/2
+		f 2/2/4 3/3/5 19/19/5 18/18/6
+		f 9/9/7 10/10/8 26/26/8 25/25/7
+		f 13/13/9 14/14/10 30/30/10 29/29/9
+		f 17/17/11 2/2/6 18/18/12 33/33/11
+		f 6/6/3 7/7/13 23/23/13 22/22/3
+		f 10/10/8 11/11/14 27/27/14 26/26/8
+		f 14/14/15 15/15/16 31/31/16 30/30/10
+		f 3/3/5 4/4/17 20/20/17 19/19/5
+		f 7/7/13 8/8/18 24/24/18 23/23/13
+		f 11/11/14 12/12/19 28/28/19 27/27/14
+		f 15/15/16 16/16/20 32/32/20 31/31/16
+		f 4/4/17 5/5/2 21/21/2 20/20/17
+		f 8/8/18 9/9/7 25/25/7 24/24/18
+		f 12/12/21 13/13/9 29/29/9 28/28/19
+		f 16/16/20 17/17/11 33/33/11 32/32/20
+		f 36/36/22 35/35/23 34/34/24
+		f 36/36/25 34/34/24 37/37/26
+		f 36/36/27 37/37/28 38/38/29
+		f 36/36/30 38/38/29 39/39/31
+		f 36/36/30 39/39/31 40/40/32
+		f 36/36/30 40/40/32 41/41/33
+		f 36/36/34 41/41/35 42/42/36
+		f 36/36/37 42/42/36 43/43/38
+		f 36/36/37 43/43/38 44/44/39
+		f 36/36/40 44/44/39 45/45/41
+		f 36/36/30 45/45/42 46/46/43
+		f 36/36/30 46/46/43 47/47/44
+		f 36/36/27 47/47/44 48/48/45
+		f 36/36/27 48/48/45 49/49/46
+		f 36/36/47 49/49/48 50/50/49
+		f 36/36/22 50/50/49 35/35/23`);
+		decoder.decodeData();
+		console.log(decoder.decoded);
+		return decoder.toMesh();
+	})();
 	this.DefaultSphereMesh = new this.Mesh((function(){
 		var MeshData = {VertexPositions:[],VertexNormals:[],VertexDataIndexs:[],Indices:[[]]};
-		var len = 24;
+		var len = 3;
 		for (var i=0; i<len; i++) {
 			var theta = self.ThetaM*i;
 			var h = Math.cos(2*(i+0.5)/len);
@@ -1860,16 +3065,15 @@ var KhawnEngine = function() {
 		while (q.Length() >= 1) {
 			q.value = [(Math.random()*2)-1,(Math.random()*2)-1,(Math.random()*2)-1,(Math.random()*2)-1];
 		}
-		return q;
+		return q.Normalize();
 	}
-    this.Components = {};
 	this.Components.PointLight = function(color) {
 		this.Enabled = true;
 		this.Color = color;
 		this.__proto__.getData = function() {
 			if (this.Enabled) {
 				var v = this.Parrent.getGlobalTransform().traslation;
-				return {Position:[v.value[0],v.value[1],v.value[2],1],Vector:v,Color:this.Color};
+				return {Position:[v.value[0],v.value[1],v.value[2],1],Vector:v,Color:this.Color,Component:this};
 			}
 		}
 	}
@@ -1879,7 +3083,7 @@ var KhawnEngine = function() {
 		this.__proto__.getData = function() {
 			if (this.Enabled) {
 				var v = this.Parrent.getGlobalTransform().matrix.value[1];
-				return {Position:[v[0],v[1],v[2],0],Vector:new self.Vector3(v),Color:this.Color};
+				return {Position:[v[0],v[1],v[2],0],Vector:new self.Vector3(v),Color:this.Color,Component:this};
 			}
 		}
 	}
@@ -1887,9 +3091,9 @@ var KhawnEngine = function() {
         this.Enabled = true;
         this.Mesh = mesh;
         this.Materials = materials;
-		this.__proto__.LightColors = [];
-		this.__proto__.LightPositions = [];
-		this.__proto__.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+		this.LightColors = [];
+		this.LightPositions = [];
+		this.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 		var VertexPositionRenderBuffer = self.gl.createFramebuffer();
 		var VertexPositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexPositionRenderTexture);
@@ -1910,10 +3114,10 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexNormalRenderBuffer);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexNormalRenderTexture,0);
-		this.__proto__.VertexPositionRenderBuffer = VertexPositionRenderBuffer;
-		this.__proto__.VertexPositionRenderTexture = VertexPositionRenderTexture;
-		this.__proto__.VertexNormalRenderBuffer = VertexNormalRenderBuffer;
-		this.__proto__.VertexNormalRenderTexture = VertexNormalRenderTexture;
+		this.VertexPositionRenderBuffer = VertexPositionRenderBuffer;
+		this.VertexPositionRenderTexture = VertexPositionRenderTexture;
+		this.VertexNormalRenderBuffer = VertexNormalRenderBuffer;
+		this.VertexNormalRenderTexture = VertexNormalRenderTexture;
 		this.Update = function() {
 			var LightColors = [];
 			var LightPositions = [];
@@ -1938,18 +3142,18 @@ var KhawnEngine = function() {
 				LightColors.push(Lghts[i].Color);
 				LightPositions.push(Lghts[i].Pos);
 			}
-			this.__proto__.LightColors = LightColors.flat();
-			this.__proto__.LightPositions = LightPositions.flat();
+			this.LightColors = LightColors.flat();
+			this.LightPositions = LightPositions.flat();
 			
-			var Refl = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
-			for (var i=0; i<self.ReflectionProbes.length; i++) {
-				var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
-				if (d < Refl[3].Distence) {
-					Refl.unshift(self.ReflectionProbes[i]);
-					Refl.pop();
-				}
-			}
-			this.__proto__.ReflectionProbe = Refl;
+			// var Refl = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+			// for (var i=0; i<self.ReflectionProbes.length; i++) {
+			// 	var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
+			// 	if (d < Refl[3].Distence) {
+			// 		Refl.unshift(self.ReflectionProbes[i]);
+			// 		Refl.pop();
+			// 	}
+			// }
+			// this.ReflectionProbe = Refl;
 
 			var ModelTransform = ModelTransform.ToMatrixTransposed3x4().value;
 			var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
@@ -1974,7 +3178,7 @@ var KhawnEngine = function() {
 			self.gl.viewport(VPdims[0],VPdims[1],VPdims[2],VPdims[3]);
 			self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
 		}
-        this.render = function(CameraTransformInverse,CamreaViewPortComponent,CamPos) {
+        this.render = function(CameraTransformInverse,CamreaViewPortComponent,CamPos,isReflection) {
             if (this.Enabled) {
 				self.gl.activeTexture(self.gl.TEXTURE0);
 				self.gl.bindTexture(self.gl.TEXTURE_2D,VertexPositionRenderTexture);
@@ -2001,11 +3205,12 @@ var KhawnEngine = function() {
                 for (var l=0; l<this.Mesh.IndexBuffers.length; l++) {
                     if (this.Materials[l]) {
                         self.gl.useProgram(this.Materials[l].shader.program);
+						self.gl.uniform1i(this.Materials[l].shader.isReflection,!!isReflection);
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
+						self.gl.uniformMatrix3fv(this.Materials[l].shader.Random,false,new Float32Array(9).map(Math.random));
 						self.gl.uniform4fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].PosLod.concat(this.ReflectionProbe[1].PosLod).concat(this.ReflectionProbe[2].PosLod).concat(this.ReflectionProbe[3].PosLod));
-						//uReflectionPosition
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
                         var m = Math.max(VPdims[2],VPdims[3]);
@@ -2053,46 +3258,23 @@ var KhawnEngine = function() {
             }
         }
     }
-	/*
-	this.SkinnedMeshBlendShapeVertexMapingShader = new this.VertexMapingShader(new self.FragmentShader(`#version 300 es
-		out highp vec4 VertexPosition;
-		
-		uniform highp sampler2D uVertexPositions;
-		uniform highp isampler2D uBlendShapeIndexs;
-		uniform highp sampler2D uBlendShapes;
-		uniform highp float uBlendShapeWeight;
-		
-		void main(void) {
-			highp ivec2 Pos = ivec2(gl_FragCoord.xy-0.5);
-			highp vec3 Vertex = texelFetch(uVertexPositions,Pos,0).xyz;
-			highp int idx = texelFetch(uBlendShapeIndexs,Pos,0)[0];
-			if (idx >= 0) {
-				highp int Wid = textureSize(uBlendShapes,0)[0];
-				Vertex += texelFetch(uBlendShapes,ivec2(idx%Wid,idx/Wid),0).xyz*uBlendShapeWeight;
-				VertexPosition = vec4(Vertex,1);
-			} else {
-				VertexPosition = vec4(Vertex,1);
-			}
-		}
-	`),[{Name:'uVertexPositions',Type:'sampler2D',Value:0},{Name:'uBlendShapeIndexs',Type:'isampler2D',Value:1},{Name:'uBlendShapes',Type:'sampler2D',Value:2}]);
-	*/
 	this.SkinnedMeshRendererTransformTextures = [];
     this.Components.SkinnedMeshRenderer = function(SkinnedMesh,materials) {
         this.Enabled = true;
         this.SkinnedMesh = SkinnedMesh;
-        this.__proto__.InversePoseTransforms = [];
-        this.__proto__.DefaultPose = SkinnedMesh.DefaultPose;
+        this.InversePoseTransforms = [];
+        this.DefaultPose = SkinnedMesh.DefaultPose;
         for (var i=0; i<SkinnedMesh.DefaultPose.length; i++) {
             this.InversePoseTransforms.push(SkinnedMesh.DefaultPose[i].InverseTransform());
         }
         this.Materials = materials;
         this.BoneRefrences = new Array(Object.keys(SkinnedMesh.Bones).length);
-        this.__proto__.SetBoneRefrence = function(BoneID,Obj) {
+        this.SetBoneRefrence = function(BoneID,Obj) {
             this.BoneRefrences[BoneID] = Obj;
         }
-		this.__proto__.LightColors = [];
-		this.__proto__.LightPositions = [];
-		this.__proto__.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+		this.LightColors = [];
+		this.LightPositions = [];
+		this.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 		var VertexPositionRenderBuffer = self.gl.createFramebuffer();
 		var VertexPositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, VertexPositionRenderTexture);
@@ -2123,11 +3305,11 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, VertexNormalRenderBuffer);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, VertexNormalRenderTexture,0);
-		this.__proto__.VertexPositionRenderBuffer = VertexPositionRenderBuffer;
-		this.__proto__.VertexPositionRenderTexture = VertexPositionRenderTexture;
-		this.__proto__.VertexNormalRenderBuffer = VertexNormalRenderBuffer;
-		this.__proto__.VertexNormalRenderTexture = VertexNormalRenderTexture;
-		this.__proto__.TransformTextureSize = self.calculateMostEfficientTextureSize(this.DefaultPose.length);
+		this.VertexPositionRenderBuffer = VertexPositionRenderBuffer;
+		this.VertexPositionRenderTexture = VertexPositionRenderTexture;
+		this.VertexNormalRenderBuffer = VertexNormalRenderBuffer;
+		this.VertexNormalRenderTexture = VertexNormalRenderTexture;
+		this.TransformTextureSize = self.calculateMostEfficientTextureSize(this.DefaultPose.length);
 		this.BlendShapeValues = {};
 		for (var i=0; i<SkinnedMesh.BlendShapes.length; i++) {
 			this.BlendShapeValues[SkinnedMesh.BlendShapes[i].Name] = 0;
@@ -2157,18 +3339,18 @@ var KhawnEngine = function() {
 					LightColors.push(Lghts[i].Color);
 					LightPositions.push(Lghts[i].Pos);
 				}
-				this.__proto__.LightColors = LightColors.flat();
-				this.__proto__.LightPositions = LightPositions.flat();
+				this.LightColors = LightColors.flat();
+				this.LightPositions = LightPositions.flat();
 				
-				var Refl = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
-				for (var i=0; i<self.ReflectionProbes.length; i++) {
-					var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
-					if (d < Refl[3].Distence) {
-						Refl.unshift(self.ReflectionProbes[i]);
-						Refl.pop();
-					}
-				}
-				this.__proto__.ReflectionProbe = Refl;
+				// var Refl = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+				// for (var i=0; i<self.ReflectionProbes.length; i++) {
+				// 	var d = self.ReflectionProbes[i].Position.Subtract(ModelTransform.traslation).LengthSquared();
+				// 	if (d < Refl[3].Distence) {
+				// 		Refl.unshift(self.ReflectionProbes[i]);
+				// 		Refl.pop();
+				// 	}
+				// }
+				// this.ReflectionProbe = Refl;
 				
 				var ModelTransform = ModelTransform.ToMatrixTransposed3x4().value;
 				var TextureData = [new Float32Array(this.DefaultPose.length*4),new Float32Array(this.DefaultPose.length*4),new Float32Array(this.DefaultPose.length*4)];
@@ -2269,7 +3451,7 @@ var KhawnEngine = function() {
 				self.gl.viewport(VPdims[0],VPdims[1],VPdims[2],VPdims[3]);
 			}
 		}
-        this.render = function(CameraTransformInverse,CamreaViewPortComponent,CamPos) {
+        this.render = function(CameraTransformInverse,CamreaViewPortComponent,CamPos,isReflection) {
             if (this.Enabled) {
 				var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
 				
@@ -2297,9 +3479,11 @@ var KhawnEngine = function() {
                 for (var l=0; l<this.SkinnedMesh.IndexBuffers.length; l++) {
                     if (this.Materials[l]) {
                         self.gl.useProgram(this.Materials[l].shader.program);
+						self.gl.uniform1i(this.Materials[l].shader.isReflection,!!isReflection);
 						self.gl.uniform3fv(this.Materials[l].shader.CamreaPosition,CamPos);
 						self.gl.uniform3fv(this.Materials[l].shader.LightColors,this.LightColors);
 						self.gl.uniform4fv(this.Materials[l].shader.LightPositions,this.LightPositions);
+						self.gl.uniformMatrix3fv(this.Materials[l].shader.Random,false,new Float32Array(9).map(Math.random));
 						self.gl.uniform4fv(this.Materials[l].shader.ReflectionPosition,this.ReflectionProbe[0].PosLod.concat(this.ReflectionProbe[1].PosLod).concat(this.ReflectionProbe[2].PosLod).concat(this.ReflectionProbe[3].PosLod));
                         self.gl.uniformMatrix3x4fv(this.Materials[l].shader.ViewMatrix,false,CameraTransformInverse.value.flat());
                         var F = Math.tan((Math.PI/360)*CamreaViewPortComponent.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height));
@@ -2362,22 +3546,32 @@ var KhawnEngine = function() {
         // this.IPD = IPD || 1;
         this.canvas = canvas;
 		this.PreviousMat = new self.Matrix3x3();
+		this.PreviousPos = new self.Vector3();
         var dis = this;
 		this.FrameBuffer = self.gl.createFramebuffer();
 		this.DepthBuffer = self.gl.createRenderbuffer();
+		this.ReflectionProbes = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
 		self.gl.bindRenderbuffer(self.gl.RENDERBUFFER, this.DepthBuffer);
 		self.gl.renderbufferStorage(self.gl.RENDERBUFFER, self.gl.DEPTH_COMPONENT24, this.Resolution[0], this.Resolution[1]);
 		self.gl.framebufferRenderbuffer(self.gl.FRAMEBUFFER, self.gl.DEPTH_ATTACHMENT, self.gl.RENDERBUFFER, this.DepthBuffer);
-		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1]);
+		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1,self.gl.COLOR_ATTACHMENT2]);
 		this.ColorRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.ColorRenderTexture);
-		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.ColorRenderTexture, 0);
+		this.ColorRenderTexture2 = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, this.ColorRenderTexture2);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT1, self.gl.TEXTURE_2D, this.ColorRenderTexture2, 0);
 		this.PositionRenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PositionRenderTexture);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
@@ -2385,7 +3579,38 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT1, self.gl.TEXTURE_2D, this.PositionRenderTexture, 0);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT2, self.gl.TEXTURE_2D, this.PositionRenderTexture, 0);
+		this.PostProcessingFrameBuffer = self.gl.createFramebuffer();
+		this.PostProcessingTexture = self.gl.createTexture();
+		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.PostProcessingFrameBuffer);
+		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PostProcessingTexture);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.PostProcessingTexture, 0);
+		this.PostProcessingTexture2 = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PostProcessingTexture2);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR_MIPMAP_LINEAR);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
+		this.PreviousColorRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PreviousColorRenderTexture);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
+		this.PreviousPositionRenderTexture = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, this.PreviousPositionRenderTexture);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, this.Resolution[0], this.Resolution[1], 0, self.gl.RGBA, self.gl.FLOAT, null);
         this.ctx = canvas.getContext("2d");
         this.renderFrame = function() {
             if (dis.Enabled) {
@@ -2409,46 +3634,113 @@ var KhawnEngine = function() {
 					Transformz = [GT.traslation];
                     CameraTransformInverse = [GT.InverseTransform().ToMatrixTransposed3x4()];
                 }
-				if (this.PostProcessing) {
-					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
-				} else {
-					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
-				}
-				// self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
-                self.gl.clearColor(0.0,0.0,0.0, 1.0);
+				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.FrameBuffer);
+				self.gl.readBuffer(self.gl.COLOR_ATTACHMENT2);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,this.PreviousPositionRenderTexture);
+				self.gl.copyTexImage2D(self.gl.TEXTURE_2D,0,self.gl.RGBA32F,0,0,this.Resolution[0],this.Resolution[1],0);
+
+                self.gl.clearColor(0.0,0.0,0.0,0.0);
                 self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
                 //self.canvas.width = resolution[0];
                 //self.canvas.height = resolution[1];
 				//console.log(RenderQue);
+				this.ReflectionProbes = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+				for (var i = 0; i < self.ReflectionProbes.length; i++) {
+					var dist = GT.traslation.Subtract(self.ReflectionProbes[i].Position).LengthSquared();
+					if (dist < this.ReflectionProbes[3].Distence) {
+						this.ReflectionProbes[3] = self.ReflectionProbes[i];
+					} else if (dist < this.ReflectionProbes[2].Distence) {
+						this.ReflectionProbes[2] = self.ReflectionProbes[i];
+					} else if (dist < this.ReflectionProbes[1].Distence) {
+						this.ReflectionProbes[1] = self.ReflectionProbes[i];
+					} else if (dist < this.ReflectionProbes[0].Distence) {
+						this.ReflectionProbes[0] = self.ReflectionProbes[i];
+					}
+				}
 				var w = this.Resolution[0]/CameraTransformInverse.length;
+				self.gl.disable(self.gl.BLEND);
 				for (var k=0; k<CameraTransformInverse.length; k++) {
 					self.gl.viewport(w*k, 0, w, this.Resolution[1]);
 					for (var j=0; j<self.RenderQue.length; j++) {
+						self.RenderQue[j].ReflectionProbe = this.ReflectionProbes;
 						self.RenderQue[j].render(CameraTransformInverse[k],dis,Transformz[k].value);
 					}
 				}
-				//MotionBlurPostProcessingShader
-				self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
-				self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR_MIPMAP_LINEAR);
-				self.gl.generateMipmap(self.gl.TEXTURE_2D);
 				if (this.PostProcessing) {
+					// TAAProcessingShader
+					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.PostProcessingFrameBuffer);
+					self.gl.activeTexture(self.gl.TEXTURE0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture2);
+					self.gl.activeTexture(self.gl.TEXTURE1);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PreviousColorRenderTexture);
+					self.gl.activeTexture(self.gl.TEXTURE2);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
+					self.gl.activeTexture(self.gl.TEXTURE3);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PreviousPositionRenderTexture);
+					self.gl.useProgram(self.TAAProcessingShader.program);
+					var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).value;
+					self.gl.uniformMatrix3fv(self.TAAProcessingShader.Uniforms.uMotionMat.Location,true,x3Mat.flat());
+					self.gl.uniform3fv(self.TAAProcessingShader.Uniforms.uMotion.Location,GT.matrix.Transpose().Multiply(this.PreviousPos.Subtract(GT.traslation)).value);
+					self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+					var m = Math.max(this.Resolution[0],this.Resolution[1])/(Math.tan((Math.PI/360)*this.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height)));
+					self.gl.uniform2fv(self.TAAProcessingShader.Uniforms.uAspect.Location,[this.Resolution[0]/m,this.Resolution[1]/m]);
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					self.gl.readBuffer(self.gl.COLOR_ATTACHMENT0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PreviousColorRenderTexture);
+					self.gl.copyTexImage2D(self.gl.TEXTURE_2D,0,self.gl.RGBA32F,0,0,this.Resolution[0],this.Resolution[1],0);
+					// self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture2);
+					// self.gl.copyTexImage2D(self.gl.TEXTURE_2D,0,self.gl.RGBA32F,0,0,this.Resolution[0],this.Resolution[1],0);
+
+					// GIAddPostProcessingShader
+					self.gl.activeTexture(self.gl.TEXTURE0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+					self.gl.activeTexture(self.gl.TEXTURE1);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PreviousColorRenderTexture);
+					self.gl.useProgram(self.GIAddPostProcessingShader.program);
+					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture2);
+					self.gl.copyTexImage2D(self.gl.TEXTURE_2D,0,self.gl.RGBA32F,0,0,this.Resolution[0],this.Resolution[1],0);
+
+
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture2);
+					self.gl.generateMipmap(self.gl.TEXTURE_2D);
+
+					// Bloom
+					self.gl.activeTexture(self.gl.TEXTURE0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture2);
+					self.gl.useProgram(self.BloomPostProcessingShader.program);
+					var m2 = Math.max(this.Resolution[0],this.Resolution[1]);
+					self.gl.uniform2fv(self.BloomPostProcessingShader.Uniforms.uAspect.Location,[m2/this.Resolution[0],m2/this.Resolution[1]]);
+					self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture2);
+					self.gl.copyTexImage2D(self.gl.TEXTURE_2D,0,self.gl.RGBA32F,0,0,this.Resolution[0],this.Resolution[1],0);
+
+					self.gl.activeTexture(self.gl.TEXTURE0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture2);
+					self.gl.useProgram(self.MotionBlurPostProcessingShader.program);
+					self.gl.uniformMatrix3fv(self.MotionBlurPostProcessingShader.Uniforms.uMotionMat.Location,true,x3Mat.flat());
+					self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+					self.gl.uniform2fv(self.MotionBlurPostProcessingShader.Uniforms.uAspect.Location,[this.Resolution[0]/m,this.Resolution[1]/m]);
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+
+					/*
 					if (false) {
 						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
 						self.gl.activeTexture(self.gl.TEXTURE0);
 						self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
-						// self.gl.generateMipmap(self.gl.TEXTURE_2D);
 						self.gl.activeTexture(self.gl.TEXTURE1);
 						self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
 						self.gl.useProgram(self.BloomPostProcessingShader.program);
-						self.gl.uniform1i(self.DepthOfFeildProcessingShader.Uniforms.uColorTex, 0);
-						// self.gl.uniform1i(self.DepthOfFeildProcessingShader.Uniforms.uPosTex, 1);
-						// self.gl.uniform1f(self.DepthOfFeildProcessingShader.Uniforms.uFocalDistance.Location, 5);
-						// self.gl.uniform1f(self.DepthOfFeildProcessingShader.Uniforms.uArperture.Location, 100);
-						//{Name:'uFocalDistance',Type:'float'},{Name:'uArperture',Type:'float'}
+						var m = Math.max(this.Resolution[0],this.Resolution[1]);
+						self.gl.uniform2fv(self.BloomPostProcessingShader.Uniforms.uAspect.Location,[m/this.Resolution[0],m/this.Resolution[1]]);
 						self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
 						self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
 						self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
-					} else {
+					} else if (false) {
 						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
 						self.gl.activeTexture(self.gl.TEXTURE0);
 						self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
@@ -2458,13 +3750,43 @@ var KhawnEngine = function() {
 						var x3Mat = this.PreviousMat.Inverse().Multiply(GT.matrix).ToQuaternion().Slerp(self.IdentityQuaternion,0.5).ToMatrix().value;
 						self.gl.uniformMatrix3fv(self.MotionBlurPostProcessingShader.Uniforms.uMotionMat.Location,true,x3Mat.flat());
 						self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
-						var m = Math.max(this.Resolution[0],this.Resolution[1]);
+						var m = Math.max(this.Resolution[0],this.Resolution[1])/(Math.tan((Math.PI/360)*this.FeildOfView)*(Math.max(self.canvas.width,self.canvas.height)/Math.min(self.canvas.width,self.canvas.height)));
 						self.gl.uniform2fv(self.MotionBlurPostProcessingShader.Uniforms.uAspect.Location,[this.Resolution[0]/m,this.Resolution[1]/m]);
 						self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
 						self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
+					} else if (false) {
+						self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+						self.gl.activeTexture(self.gl.TEXTURE0);
+						self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+						self.gl.activeTexture(self.gl.TEXTURE1);
+						self.gl.bindTexture(self.gl.TEXTURE_2D,this.PositionRenderTexture);
+						self.gl.useProgram(self.DepthOfFeildProcessingShader.program);
+						var m = Math.max(this.Resolution[0],this.Resolution[1]);
+						self.gl.uniform2fv(self.DepthOfFeildProcessingShader.Uniforms.uAspect.Location,[m/this.Resolution[0],m/this.Resolution[1]]);
+						self.gl.viewport(0, 0, this.Resolution[0], this.Resolution[1]);
+						self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+						self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 					}
+					*/
+				} else {
+					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.PostProcessingFrameBuffer);
+					self.gl.activeTexture(self.gl.TEXTURE0);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture);
+					self.gl.activeTexture(self.gl.TEXTURE1);
+					self.gl.bindTexture(self.gl.TEXTURE_2D,this.ColorRenderTexture2);
+					self.gl.useProgram(self.GIAddPostProcessingShader.program);
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+					self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 				}
+				// ColorCorrectPostProcessingShader
+				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, null);
+				self.gl.activeTexture(self.gl.TEXTURE0);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,this.PostProcessingTexture);
+				self.gl.useProgram(self.ColorCorrectPostProcessingShader.program);
+				self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, self.VertexMapingIndexBuffer);
+				self.gl.drawElements(self.gl.TRIANGLES,6,self.gl.UNSIGNED_SHORT,0);
 				this.PreviousMat = GT.matrix;
+				this.PreviousPos = GT.traslation;
                 dis.ctx.clearRect(0,0,dis.canvas.width,dis.canvas.height);
                 dis.ctx.drawImage(self.canvas,0,0,dis.canvas.width,dis.canvas.height);
             }
@@ -2472,9 +3794,12 @@ var KhawnEngine = function() {
     }
 	this.Components.ReflectionProbe = function(res) {
         this.Enabled = true;
-		res = res || 128;
+		res = res || 256;
+		this.Jitter = false;
 		this.Resolution = res;
 		this.Realtime = false;
+		this.MetaReflect = true;
+		this.Position = new self.Vector3();
 		this.Cubemap = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
 		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_POSITIVE_X, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
@@ -2483,13 +3808,22 @@ var KhawnEngine = function() {
 		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_POSITIVE_Z, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
 		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
-		self.gl.generateMipmap(self.gl.TEXTURE_CUBE_MAP);
 		self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR_MIPMAP_LINEAR);
-		//self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+		// self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.generateMipmap(self.gl.TEXTURE_CUBE_MAP);
+		self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+		// self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MAG_FILTER, self.gl.LINEAR);
 		this.RenderBuffer = self.gl.createFramebuffer();
 		self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.RenderBuffer);
 		this.RenderTexture = self.gl.createTexture();
 		self.gl.bindTexture(self.gl.TEXTURE_2D, this.RenderTexture);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
+		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
+		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		this.RenderTexture2 = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_2D, this.RenderTexture2);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MAG_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_MIN_FILTER, self.gl.NEAREST);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
@@ -2502,19 +3836,20 @@ var KhawnEngine = function() {
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_S, self.gl.CLAMP_TO_EDGE);
 		self.gl.texParameteri(self.gl.TEXTURE_2D, self.gl.TEXTURE_WRAP_T, self.gl.CLAMP_TO_EDGE);
 		self.gl.texImage2D(self.gl.TEXTURE_2D, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
-		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1]);
+		self.gl.drawBuffers([self.gl.COLOR_ATTACHMENT0,self.gl.COLOR_ATTACHMENT1,self.gl.COLOR_ATTACHMENT2]);
 		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, this.RenderTexture, 0);
-		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT1, self.gl.TEXTURE_2D, this.PositionRenderTexture, 0);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT1, self.gl.TEXTURE_2D, this.RenderTexture2, 0);
+		self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT2, self.gl.TEXTURE_2D, this.PositionRenderTexture, 0);
 		this.DepthBuffer = self.gl.createRenderbuffer();
 		self.gl.bindRenderbuffer(self.gl.RENDERBUFFER, this.DepthBuffer);
 		self.gl.renderbufferStorage(self.gl.RENDERBUFFER, self.gl.DEPTH_COMPONENT32F, res, res);
 		self.gl.framebufferRenderbuffer(self.gl.FRAMEBUFFER, self.gl.DEPTH_ATTACHMENT, self.gl.RENDERBUFFER, this.DepthBuffer);
 		this.CubemapFrameBuffer = self.gl.createFramebuffer();
 		this.getData = function() {
-			var p = this.Parrent.getGlobalTransform().traslation;
+			var p = this.Position;
 			var pl = p.value.slice();
 			pl.push(Math.floor(Math.log2(this.Resolution)))
-			return {Cubemap:this.Cubemap,Position:p,PosLod:pl};
+			return {Cubemap:this.Cubemap,Position:p,PosLod:pl,Component:this};
 		}
 		this.Update = function() {
 			if (this.Enabled && this.Realtime) {
@@ -2525,6 +3860,11 @@ var KhawnEngine = function() {
 			if (this.Enabled) {
 				self.gl.enable(self.gl.DEPTH_TEST);
 				var Pos = this.Parrent.getGlobalTransform().traslation;
+				if (this.Jitter) {
+					// Pos.AddToThis(self.randomPointOnSphere().Scale(0.1));
+					Pos.AddToThis(self.randomPointInSphere().Scale(0.01));
+				}
+				this.Position = Pos;
 				for (var i=0; i<self.CubemapMatrixTransforms.length; i++) {
 					self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.RenderBuffer);
 					var CamTranfm = new self.transform(Pos.Oposite(),self.CubemapMatrixTransforms[i]).ToMatrix3x4();
@@ -2532,10 +3872,12 @@ var KhawnEngine = function() {
 					self.gl.clear(self.gl.COLOR_BUFFER_BIT | self.gl.DEPTH_BUFFER_BIT);
 					for (var j=0; j<self.RenderQue.length; j++) {
 						var rp = self.RenderQue[j].ReflectionProbe;
-						self.RenderQue[j].__proto__.ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+						if (!this.MetaReflect) {
+							self.RenderQue[j].ReflectionProbe = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+						}
 						self.gl.viewport(0,0,this.Resolution,this.Resolution);
-						self.RenderQue[j].render(CamTranfm,{FeildOfView:59,ClipDistance:0.2},Pos.value);
-						self.RenderQue[j].__proto__.ReflectionProbe = rp;
+						self.RenderQue[j].render(CamTranfm,{FeildOfView:59,ClipDistance:0.2},Pos.value,true);
+						self.RenderQue[j].ReflectionProbe = rp;
 					}
 					//ReflectionProbePostProcessingShader
 					self.gl.useProgram(self.ReflectionProbePostProcessingShader.program);
@@ -2929,6 +4271,7 @@ var KhawnEngine = function() {
 				//var t1 = t0.TransformTransform(this.Parrent.transform);
 				var t1 = this.Parrent.Parrent.getGlobalTransform().matrix.ToQuaternion();
 				var q0 = this.Prev.Multiply(t1.Conjugate());
+				//var q0 = this.Prev.Conjugate().Multiply(t1);
 				this.Momentum = this.Momentum.Multiply(q0);
 				this.Offset = this.Offset.Multiply(q0.Conjugate());
 				this.Momentum = this.Momentum.Slerp(this.Offset,-this.Stiffniss);
@@ -2983,6 +4326,7 @@ var KhawnEngine = function() {
                         return undefined;
                     }
                 }
+				Chain.push(this.Parrent);
 				for (var i=0; i<this.Iterations; i++) {
 					for (var j=1; j<Chain.length; j++) {
 						var trsnfm = Chain[j].getGlobalTransform().InverseTransform();
@@ -2992,19 +4336,20 @@ var KhawnEngine = function() {
 						var q = self.lookAtRotation(target,goal);
                         var m = Chain[j].transform.matrix.Multiply(q.ToMatrix());
                         for (var k=0; k<Chain[j].Components.length; k++) {
-                            if (Object.values(self.Components.IKConstraints).includes(Chain[j].Components[k].constructor)) {
+							var comp = Chain[j].Components[k];
+                            //if (Object.values(self.Components.IKConstraints).includes(Chain[j].Components[k].constructor)) {
+							if (comp instanceof self.Components.ConstrainAxsisAngle || comp instanceof self.Components.LockXaxisConstraint || comp instanceof self.Components.LockYaxisConstraint || comp instanceof self.Components.LockZaxisConstraint || comp instanceof self.Components.XaxisRotationConstraint || comp instanceof self.Components.YaxisRotationConstraint || comp instanceof self.Components.ZaxisRotationConstraint) {
                                 m = Chain[j].Components[k].ConstraintMatrix(m);
                             }
                         }
                         Chain[j].setMatrix(m);
 					}
 				}
-				Chain[0].setMatrix(Chain[1].getGlobalTransform().matrix.Inverse().Multiply(GoalGlobalTransform.matrix.SetScale(1)));
+				Chain[0].setMatrix(Chain[1].getGlobalTransform().matrix.Inverse().Multiply(GoalGlobalTransform.matrix).SetScale(1));
             }
         }
     }
-	this.Components.IKConstraints = {};
-	this.Components.IKConstraints.ConstrainAxsisAngle = function(ax,angl,maxDeviation) {
+	this.Components.ConstrainAxsisAngle = function(ax,angl,maxDeviation) {
 		this.Enabled = true;
         this.Axis = ax;
         this.Agl = angl;
@@ -3043,7 +4388,7 @@ var KhawnEngine = function() {
             }
         }
 	}
-    this.Components.IKConstraints.LockXaxisConstraint = function() {
+    this.Components.LockXaxisConstraint = function() {
         this.Enabled = true;
         this.ConstraintMatrix = function(m) {
             if (this.Enabled) {
@@ -3056,7 +4401,7 @@ var KhawnEngine = function() {
             }
         }
     }
-    this.Components.IKConstraints.LockYaxisConstraint = function() {
+    this.Components.LockYaxisConstraint = function() {
         this.Enabled = true;
         this.ConstraintMatrix = function(m) {
             if (this.Enabled) {
@@ -3069,7 +4414,7 @@ var KhawnEngine = function() {
             }
         }
     }
-	this.Components.IKConstraints.LockZaxisConstraint = function() {
+	this.Components.LockZaxisConstraint = function() {
         this.Enabled = true;
         this.ConstraintMatrix = function(m) {
             if (this.Enabled) {
@@ -3082,7 +4427,7 @@ var KhawnEngine = function() {
             }
         }
     }
-    this.Components.IKConstraints.XaxisRotationConstraint = function() {
+    this.Components.XaxisRotationConstraint = function() {
         this.Enabled = true;
         this.ConstraintMatrix = function(m) {
             if (this.Enabled) {
@@ -3095,7 +4440,7 @@ var KhawnEngine = function() {
             }
         }
     }
-    this.Components.IKConstraints.YaxisRotationConstraint = function() {
+    this.Components.YaxisRotationConstraint = function() {
         this.Enabled = true;
         this.ConstraintMatrix = function(m) {
             if (this.Enabled) {
@@ -3108,7 +4453,7 @@ var KhawnEngine = function() {
             }
         }
     }
-    this.Components.IKConstraints.ZaxisRotationConstraint = function() {
+    this.Components.ZaxisRotationConstraint = function() {
         this.Enabled = true;
         this.ConstraintMatrix = function(m) {
             if (this.Enabled) {
@@ -3158,6 +4503,71 @@ var KhawnEngine = function() {
 				var v1 = t1.traslation.Subtract(this.Target.getGlobalTransform().traslation);
 				this.Parrent.setMatrix(t0.matrix.Inverse().Multiply(self.lookAtRotation(v1,v0).ToMatrix()));
 			}
+		}
+	}
+	this.lightMapper = function() {
+		/*
+		this.Resolution = res;
+		this.Realtime = false;
+		this.Cubemap = self.gl.createTexture();
+		self.gl.bindTexture(self.gl.TEXTURE_CUBE_MAP, this.Cubemap);
+		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_POSITIVE_X, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_NEGATIVE_X, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_POSITIVE_Y, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_NEGATIVE_Y, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_POSITIVE_Z, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texImage2D(self.gl.TEXTURE_CUBE_MAP_NEGATIVE_Z, 0, self.gl.RGBA32F, res, res, 0, self.gl.RGBA, self.gl.FLOAT, null);
+		self.gl.texParameteri(self.gl.TEXTURE_CUBE_MAP, self.gl.TEXTURE_MIN_FILTER, self.gl.LINEAR_MIPMAP_LINEAR);
+		self.gl.generateMipmap(self.gl.TEXTURE_CUBE_MAP);
+		*/
+		this.frameBuffer = self.gl.createFramebuffer();
+		this.__proto__.generateLightmapForMeshRenderer = function(MeshRenderer,res) {
+				var img = document.createElement('canvas');
+				img.width = res[0];
+				img.height = res[1];
+				var texture = new self.Texture(img);
+				var VPdims = self.gl.getParameter(self.gl.VIEWPORT);
+				self.gl.bindFramebuffer(self.gl.FRAMEBUFFER, this.frameBuffer);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,texture.texture);
+				self.gl.framebufferTexture2D(self.gl.FRAMEBUFFER, self.gl.COLOR_ATTACHMENT0, self.gl.TEXTURE_2D, texture.texture,0);
+				self.gl.useProgram(self.NormalTextureRenderShader.program);
+				self.gl.viewport(0,0,res[0],res[1]);
+				self.gl.disable(self.gl.DEPTH_TEST);
+				
+				self.gl.activeTexture(self.gl.TEXTURE0);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,MeshRenderer.VertexPositionRenderTexture);
+
+				self.gl.activeTexture(self.gl.TEXTURE1);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,MeshRenderer.VertexNormalRenderTexture);
+
+				self.gl.activeTexture(self.gl.TEXTURE2);
+				self.gl.bindTexture(self.gl.TEXTURE_2D,MeshRenderer.Mesh.VertexUVPositions.texture);
+				
+				for (var i=0; i<MeshRenderer.Mesh.l.length; i++) {
+					self.gl.bindBuffer(self.gl.ELEMENT_ARRAY_BUFFER, MeshRenderer.Mesh.IndexBuffers[i]);
+					self.gl.drawElements(self.gl.TRIANGLES,MeshRenderer.Mesh.l[i],self.gl.UNSIGNED_SHORT,0);
+				}
+				return texture;
+				
+				//self.NormalTextureRenderShader
+		}
+	}
+	this.Scripts = {};
+	this.Script = function(code) {
+		this.code = code;
+		this.functions = null;
+		this.init = function() {
+			this.functions = eval(this.code);
+		}
+	}
+	this.AABB = function(p0,p1) {
+		this.Min = p0.Min(p1);
+		this.Max = p0.Max(p1);
+		this.__proto__.getCenter = function() {
+			return this.Min.Add(this.Max).Scale(0.5);
+		}
+		this.__proto__.getSize = function() {
+			return this.Max.Subtract(this.Min).Scale(0.5);
 		}
 	}
     this.EulerAngles = function(x,y,z) {
@@ -3403,6 +4813,9 @@ var KhawnEngine = function() {
 		}
 		this.__proto__.Max = function(v) {
 			return new self.Vector3([Math.max(this.value[0],v.value[0]),Math.max(this.value[1],v.value[1]),Math.max(this.value[2],v.value[2])]);
+		}
+		this.__proto__.Clone = function() {
+			return new self.Vector3(this.value);
 		}
         this.__proto__.ToArray = function() {
             return this.value;
@@ -4415,6 +5828,59 @@ var KhawnEngine = function() {
 		}
 		renderChildren(self.Root);
 	}
+	this.BakeAllReflectionProbes = function() {
+		function findAndBake(Obj) {
+			for (var i = 0; i < Obj.Children.length; i++) {
+				for (var j = 0; j < Obj.Children[i].Components.length; j++) {
+					if (Obj.Children[i].Components[j] instanceof self.Components.ReflectionProbe) {
+						Obj.Children[i].Components[j].Render();
+					}
+				}
+				findAndBake(Obj.Children[i]);
+			}
+		}
+		findAndBake(self.Root);
+	}
+	this.CullBakeReflectionProbes = function(CameraObj) {
+		/*
+		function findAndBake(Obj,trsfm,pos,dir) {
+			var trsfm2 = Obj.transform.TransformTransform(trsfm);
+			for (var i = 0; i < Obj.Children.length; i++) {
+				if (pos.Subtract(trsfm2.traslation).Dot(dir) < 0) {
+					for (var j = 0; j < Obj.Children[i].Components.length; j++) {
+						if (Obj.Children[i].Components[j] instanceof self.Components.ReflectionProbe) {
+							Obj.Children[i].Components[j].Render();
+						}
+					}
+				}
+				findAndBake(Obj.Children[i],trsfm2,pos,dir);
+			}
+		}
+		var CameraTansform = CameraObj.getGlobalTransform();
+		findAndBake(self.Root,self.IdentityTransform,CameraTansform.traslation,new self.Vector3([CameraTansform.matrix.value[0][2],CameraTansform.matrix.value[1][2],CameraTansform.matrix.value[2][2]]));
+		*/
+		var CameraTansform = CameraObj.getGlobalTransform();
+		var Probes = new Array(4).fill({Cubemap:null,Distence:Infinity,Position:{value:[0,0,0]},PosLod:[0,0,0,0]});
+		for (var i = 0; i < self.ReflectionProbes.length; i++) {
+			var dist = CameraTansform.traslation.Subtract(self.ReflectionProbes[i].Position).LengthSquared();
+			if (dist < Probes[3].Distence) {
+				Probes.unshift(self.ReflectionProbes[i]);
+				Probes.pop();
+			}
+		}
+		if (Probes[0].Component) {
+			Probes[0].Component.Render();
+		}
+		if (Probes[1].Component) {
+			Probes[1].Component.Render();
+		}
+		if (Probes[2].Component) {
+			Probes[2].Component.Render();
+		}
+		if (Probes[3].Component) {
+			Probes[3].Component.Render();
+		}
+	}
     this.Render = function() {
 		self.UpdateRenderQue();
         function RenderCameras(obj) {
@@ -4525,7 +5991,15 @@ var KhawnEngine = function() {
 		for (var i=0; i<keys.length; i++) {
 			var val = obj[keys[i]];
 			if (val) {
-				if (val instanceof Object && val.constructor !== Array && val.constructor !== self.Object && val.constructor !== Function) {
+				var type = self.State.getComponentType(val,2);
+				if (type) {
+					var bfr = self.State.objectToArrayBuffer(val);
+					if (bfr.length > 0) {
+						arr.push(self.TextEncoder.encode(keys[i]+"\x00"));
+						arr.push(new Uint32Array([bfr.buffer.byteLength,0]));
+						arr.push(bfr);
+					}
+				} else if (val instanceof Object && val.constructor !== Array && val.constructor !== self.Object && val.constructor !== Function) {
 					var bfr = self.State.objectToArrayBuffer(val);
 					if (bfr.length > 0) {
 						arr.push(self.TextEncoder.encode(keys[i]+"\x00"));
@@ -4602,6 +6076,7 @@ var KhawnEngine = function() {
 	}
 	this.State.load = function(arrbfr) {
 		var data = self.State.parseArrayBuffer(arrbfr);
+		console.log(data);
 		var Assets = [];
 		var Root = null;
 		function toObject(arr) {
@@ -4619,6 +6094,15 @@ var KhawnEngine = function() {
 				} else if (arr[i][0] == "Children") {
 					for (var j=1; j<arr[i].length; j++) {
 						obj.addChild(toObject(arr[i][j]));
+					}
+				} else if (arr[i][0] == "Components") {
+					for (var j=1; j<arr[i].length; j++) {
+						console.log(arr[i][j],self.Components[arr[i][j][0]]);
+						var Comp = new self.Components[arr[i][j][0]]();
+						// for (var k=1; k<arr[i][j][k].length; k++) {
+						// 	Comp[arr[i][j][k][0]] = arr[i][j][k][1];
+						// }
+						// Object.assign(Comp,arr[j][1]);
 					}
 				}
 			}

@@ -2,8 +2,8 @@
 <html>
     <head>
         <title>Test Game Engine</title>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/pako/1.0.11/pako.js"></script>
-        <script src="https://khawn2u.github.io/KhawnEngine/KhawnEngine.js"></script>
+        <script src="./pako.js"></script>
+        <script src="./KhawnEngine Experimental.js"></script>
 		<!-- <script src="../ReconstructionAIwebgl.js"></script> -->
         <style>
 			body {
@@ -14,6 +14,7 @@
 			}
             canvas {
                 width: 50vw;
+				image-rendering: pixelated;
             }
 			table {
 				border: 10px;
@@ -210,7 +211,7 @@
 					<center>My Untitled Project</center>
 				</td>
 				<td>
-					
+					<input type="button" value="Save" onclick="save();">
 				</td>
 			</tr>
 			<tr>
@@ -218,7 +219,7 @@
 					<div id="heigerarchy" class="panel"></div>
 				</td>
 				<td>
-					<canvas id="viewport" width="1366" height="768"></canvas>
+					<canvas id="viewport" width="1920" height="1080"></canvas>
 				</td>
 				<td>
 					<div id="properites" class="panel"></div>
@@ -248,6 +249,7 @@
 			}
 			var Importer = document.getElementById("Import");
 			Importer.onchange = function(e) {
+				Engine.AudioContext.resume();
 				for (var i=0; i<e.target.files.length; i++) {
 					var file = e.target.files[i];
 					var reader = new FileReader();
@@ -258,7 +260,9 @@
 							decoder.parse(data);
 							decoder.decodeData();
 							test = decoder;
-							Engine.Root.addChild(decoder.toObject());
+							var O = decoder.toObject();
+							O.SetScale(3);
+							Engine.Root.addChild(O);
 							Engine.listAssets();
 							AssetMag.AddUnaddedAssets(Engine.Assets);
 							AssetMag.createDropdownHeigherarchy();
@@ -266,7 +270,11 @@
 							var decoder = new Engine.OBJdecoder();
 							decoder.parse(data);
 							decoder.decodeData();
-							Engine.Root.addChild(decoder.toObject());
+							var O = decoder.toObject(Engine.DiffuseMaterial);
+							// var O = decoder.toObject(Engine.DefaultMaterial);
+							// O.SetScale(0.25);
+							O.SetScale(0.5);
+							Engine.Root.addChild(O);
 							Engine.listAssets();
 							AssetMag.AddUnaddedAssets(Engine.Assets);
 							AssetMag.createDropdownHeigherarchy();
@@ -283,34 +291,64 @@
 							var decoder = new Engine.VMDdecoder();
 							decoder.parse(data);
 							console.log(decoder.parsed);
+						} else if (file.name.endsWith(".k2u")) {
+							var fr = new FileReader();
+							fr.onloadend = function() {
+								var data = new Uint8Array(fr.result);
+								var State = Engine.State.load(data);
+								// console.log(State);
+								// State.Root.addChild(Camera);
+								// Engine.Root = State.Root;
+								// Engine.Assets = State.Assets;
+								// AssetMag.AddUnaddedAssets(Engine.Assets);
+								// AssetMag.createDropdownHeigherarchy();
+							}
+							fr.readAsArrayBuffer(file);
 						}
 					}
 					reader.readAsArrayBuffer(file);
 				}
 			}
+			// var Camera = Engine.CreateCamera(canvas,[3200,1800],100,0.2,false);
 			// var Camera = Engine.CreateCamera(canvas,[1920,1080],100,0.2,false);
-			var Camera = Engine.CreateCamera(canvas,[1600,900],90,0.2,false);
+			var Camera = Engine.CreateCamera(canvas,[1600,900],100,0.2,false);
+			// var Camera = Engine.CreateCamera(canvas,[800,450],100,0.2,false);
+			// var Camera = Engine.CreateCamera(canvas,[400,225],100,0.2,false);
+
 			// var Camera = Engine.CreateCamera(canvas,[1280,720],90,0.2,false);
 			//var Camera = Engine.CreateCamera(canvas,[1366,768],90,0.2,false);
 			// var Camera = Engine.CreateCamera(canvas,[683,384],90,0.2,false);
 			// var Camera = Engine.CreateCamera(canvas,[512,288],90,0.2,false);
-			Camera.transform.traslation.AddToThis(new Engine.Vector3([0,3,8]));
-			Camera.rotateThisAroundYAxis(new Engine.Angle(180));
+			// var Camera = Engine.CreateCamera(canvas,[256,144],90,0.2,false);
+			// var Camera = Engine.CreateCamera(canvas,[128,72],90,0.2,false);
+			Camera.transform.traslation.AddToThis(new Engine.Vector3([-4,1,0]));
+			Camera.rotateThisAroundYAxis(new Engine.Angle(90));
+			// Camera.AddComponent(new Engine.Components.ReflectionProbe(256));
+
 			Engine.Root.addChild(Camera);
 			var Lights = new Engine.Object();
 			Lights.Name = "Lights";
-			//var SunLight = new Engine.Object();
-			//SunLight.AddComponent(new Engine.Components.DirectionalLight([1,1,1]));
-			//SunLight.rotateThisAroundYAxis(new Engine.Angle(-45));
-			//SunLight.rotateThisAroundXAxis(new Engine.Angle(-45));
-			//Lights.addChild(SunLight);
 
-			for (var q=0; q<24; q++) {
+			// var SunLight = new Engine.Object();
+			// SunLight.Name = "SunLight";
+			// // SunLight.AddComponent(new Engine.Components.DirectionalLight([0.1,0.1,0.1]));
+			// SunLight.AddComponent(new Engine.Components.DirectionalLight([0.7,0.7,0.7]));
+			// // SunLight.AddComponent(new Engine.Components.DirectionalLight([1.0,1.0,1.0]));
+			// // SunLight.AddComponent(new Engine.Components.DirectionalLight([4.0,4.0,4.0]));
+			// // SunLight.Components[0].Enabled = false;
+			// SunLight.rotateThisAroundYAxis(new Engine.Angle(-45));
+			// SunLight.rotateThisAroundXAxis(new Engine.Angle(-45));
+			// Lights.addChild(SunLight);
+
+			var LightBrightness = 2;
+			for (var q=0; q<1; q++) {
 				var Light = new Engine.Object();
 				Light.Name = "Light" + q;
-				Light.AddComponent(new Engine.Components.PointLight(Engine.Hue(Math.random())));
+				var color = Engine.Hue(Math.random());
+				Light.AddComponent(new Engine.Components.PointLight([color[0]*LightBrightness,color[1]*LightBrightness,color[2]*LightBrightness]));
 				// Light.AddComponent(new Engine.Components.PointLight([1,1,1]));
-				Light.SetPosition([(Math.random()*10)-5,Math.random()*4,(Math.random()*10)-5]);
+				Light.SetPosition([(Math.random()*10)-5,(Math.random()*4)+0.75,(Math.random()*10)-5]);
+				// Light.SetPosition([(Math.random()*20)-10,Math.random()*1,(Math.random()*20)-10]);
 				Lights.addChild(Light);
 			}
 
@@ -318,54 +356,101 @@
 			for (var i=0; i<4; i++) {
 				var LP = new Engine.Object();
 				LP.Name = "LightProbe" + i;
-				LightProbes.push(new Engine.Components.ReflectionProbe());
+				LightProbes.push(new Engine.Components.ReflectionProbe(256));
 				LP.AddComponent(LightProbes[LightProbes.length-1]);
-				LP.SetPosition([((i%2)*8)-4,2,((Math.floor(i/2)%2)*8)-4]);
+				LP.SetPosition([((i%2)*8)-4,3,((Math.floor(i/2)%2)*8)-4]);
+				// LP.SetPosition([((i%2)*27.2)-13.6,3,((Math.floor(i/2)%2)*27.2)-13.6]);
+				// LP.SetPosition([[-13.6,4,0],[0,4,-13.6],[13.6,4,0],[0,4,13.6],[-13.6,4,-13.6],[13.6,4,-13.6],[-13.6,4,13.6],[13.6,4,13.6]][i]);
+				// LP.Components[0].MetaReflect = false;
 				Engine.Root.addChild(LP);
 			}
 			var Test;
-			setTimeout(function() {
-				LightProbes[0].Render();
-				LightProbes[1].Render();
-				LightProbes[2].Render();
-				LightProbes[3].Render();
-
-				var Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Engine.DefaultMaterial]);
-				Test = new Engine.Components.RigidBody();
-				Obj.AddComponent(Test);
-				Obj.AddComponent(new Engine.Components.BoxCollider());
-				// Obj.setMatrix(Engine.randomQuaternion().ToMatrix())
-				Engine.Root.addChild(Obj);
-				Obj.SetPosition([0,5,0])
-				Obj.SetScale(1);
-			},1000);
-			for (var i=0; i<49; i++) {
-				setTimeout(function(){
-					Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Engine.DefaultMaterial]);
-					Obj.AddComponent(new Engine.Components.RigidBody());
+			var TestAudio;
+			var TestSound = new Engine.ProceduralSound(11025);
+			// TestSound.setChannel(0,new Float32Array(22000).map(function(){return (Math.random()*2)-1;}));
+			// TestSound.setChannel(0,new Float32Array(22000).map(function(){return (Math.random()*0.5)-0.25;}));
+			// TestSound.setChannel(0,new Float32Array(11025).map(function(dc,i){return Math.exp(-0.0005*i)*Math.sin(i*200*(Math.PI/44100));}));
+			// TestSound.setChannel(0,new Float32Array(11025).map(function(dc,i){return Math.exp(-0.0005*i)*((Math.random()*2)-1);}));
+			// TestSound.setChannel(0,new Float32Array(44100*10).map(function(dc,i){return 0.5*Math.sin(i*500*(Math.PI/44100));}));
+			// TestSound.setChannel(0,new Float32Array(44100*10).map(function(dc,i){return 0.25*((Math.random()*2)-1);}));
+			TestSound.setChannel(0,new Float32Array(11025).map(function(dc,i){return Math.exp(-0.0005*i)*Math.sin(i*((Math.random()*0.001)+0.999)*200*(Math.PI/44100));}));
+			var Red = new Engine.Material(Engine.DiffuseShader,{uColor:[1,0,0],uTexture:Engine.DefaultTexture});
+			if (false) {
+				setTimeout(function() {
+					// Engine.XaxisMaterial.Values.uColor = [10,0,0];
+					var Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Engine.XaxisMaterial]);
+					// var Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Red]);
+					// var Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Engine.DebugMaterial]);
+					// var Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Engine.DefaultMaterial]);
+					Obj.Name = "Test Cube";
+					Test = new Engine.Components.RigidBody();
+					Obj.AddComponent(Test);
 					Obj.AddComponent(new Engine.Components.BoxCollider());
+					TestAudio = new Engine.Components.AudioEmitter();
+					Obj.AddComponent(TestAudio);
 					// Obj.setMatrix(Engine.randomQuaternion().ToMatrix())
 					Engine.Root.addChild(Obj);
 					Obj.SetPosition([0,5,0]);
 					Obj.SetScale(1);
-				},1000+(i*250));
+				},10);
 			}
+			setInterval(function() {
+				Engine.CullBakeReflectionProbes(Camera);
+			},250);
+			// setTimeout(function() {
+			// 	Engine.CullBakeReflectionProbes(Camera);
+			// },50);
+			// for (var i=0; i<4; i++) {
+			// 	setTimeout(function(){
+			// 		Obj = Engine.CreateMeshObject(Engine.DefaultCubeMesh,[Engine.DefaultMaterial]);
+			// 		Obj.AddComponent(new Engine.Components.RigidBody());
+			// 		Obj.AddComponent(new Engine.Components.BoxCollider());
+			// 		// Obj.setMatrix(Engine.randomQuaternion().ToMatrix())
+			// 		Engine.Root.addChild(Obj);
+			// 		Obj.SetPosition([0,5,0]);
+			// 		Obj.SetScale(1);
+			// 	},1000+(i*250));
+			// }
 			//DefaultMaterial
 			//DebugMaterial
 
 			Engine.Root.addChild(Lights);
-			// var Floor = Engine.CreateMeshObject(Engine.DefaultFlipedCubeMesh,[Engine.DiffuseMaterial]);
-			var Floor = Engine.CreateMeshObject(Engine.DefaultCubeRoomMesh,[Engine.DiffuseMaterial,Engine.DefaultMaterial]);
-			Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-0.5,-10,-0.5]),new Engine.Vector3([0.5,-0.5,0.5])));
+
+
+			var Sphere = Engine.CreateMeshObject(Engine.DefaultUVSphereMesh,[Engine.DefaultMaterial]);
+			Sphere.Name = "Sphere";
+			Engine.Root.addChild(Sphere);
+			Sphere.SetPosition([0,0.5,0]);
+
+			// var TestArrow = Engine.CreateMeshObject(Engine.ArrowMesh,[Engine.DiffuseMaterial]);
+			// var TestArrow = Engine.CreateMeshObject(Engine.ArrowMesh,[Engine.DebugMaterial]);
+			// Engine.XaxisMaterial.Values.uColor = [10,0,0];
+			// var TestArrow = Engine.CreateMeshObject(Engine.ArrowMesh,[Engine.XaxisMaterial]);
+			// TestArrow.Name = "Arrow";
+			// Engine.Root.addChild(TestArrow);
+			// TestArrow.SetPosition([0,2,0]);
+			// TestArrow.SetScale(4.0);
+
+			// var Floor = Engine.CreateMeshObject(Engine.DefaultPlaneMesh,[Engine.DiffuseMaterial]);
+			// var Floor = Engine.CreateMeshObject(Engine.DefaultPlaneMesh,[Engine.DefaultMaterial]);
+			var Floor = Engine.CreateMeshObject(Engine.DefaultFlipedCubeMesh,[Engine.DiffuseMaterial]);
+			// // var Floor = Engine.CreateMeshObject(Engine.DefaultCubeRoomMesh,[Engine.DiffuseMaterial,Engine.DefaultMaterial]);
+			// Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-0.5,-10,-0.5]),new Engine.Vector3([0.5,-0.5,0.5])));
+			// // Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-0.5,-10,-0.5]),new Engine.Vector3([0.5,0,0.5])));
 			
-			Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-10,-0.5,-10]),new Engine.Vector3([-0.5,0.5,0.5])));
-			Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-10,-0.5,-10]),new Engine.Vector3([0.5,0.5,-0.5])));
-			Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([10,-0.5,10]),new Engine.Vector3([0.5,0.5,-0.5])));
-			Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([10,-0.5,10]),new Engine.Vector3([-0.5,0.5,0.5])));
-			//var Floor = Engine.CreateMeshObject(Engine.DefaultPlaneMesh,[Engine.DefaultMaterial]);
-			Floor.Name = "Room";
+			// Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-10,-0.5,-10]),new Engine.Vector3([-0.5,0.5,0.5])));
+			// Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-10,-0.5,-10]),new Engine.Vector3([0.5,0.5,-0.5])));
+			// Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([10,-0.5,10]),new Engine.Vector3([0.5,0.5,-0.5])));
+			// Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([10,-0.5,10]),new Engine.Vector3([-0.5,0.5,0.5])));
+			// //var Floor = Engine.CreateMeshObject(Engine.DefaultPlaneMesh,[Engine.DefaultMaterial]);
+			// var Floor = new Engine.Object();
+			// Floor.AddComponent(new Engine.Components.BoxCollider(new Engine.Vector3([-0.5,-10,-0.5]),new Engine.Vector3([0.5,0,0.5])));
+			Floor.Name = "Floor";
+			// Floor.SetScale(50.8);
+			// Floor.SetScale(15.0);
 			Floor.SetScale(10);
-			Floor.SetPosition([0,5,0])
+			Floor.SetPosition([0,5,0]);
+			// Floor.SetPosition([0,0,0]);
 			Engine.Root.addChild(Floor);
 			
 			
@@ -383,7 +468,7 @@
 				if (document.pointerLockElement === canvas) {
 					e.preventDefault();
 				}
-				if (HeldDownKeys.control && HeldDownKeys.s) {
+				if (HeldDownKeys.control && HeldDownKeys.s && document.pointerLockElement !== canvas) {
 					e.preventDefault();
 					save();
 				}
@@ -435,7 +520,13 @@
 				cmenu.children[1].style.display = "";
 			}
 			function save() {
-
+				var data = Engine.State.toArrayBuffer();
+				var blob = new Blob([data]);
+				var a = document.createElement("a");
+				a.href = URL.createObjectURL(blob);
+				a.download = "scene.k2u";
+				a.click();
+				a.remove();
 			}
 			function newMaterial() {
 				var Mat = new Engine.Material(Engine.DiffuseShader,{uColor:[1,1,1],uTexture:Engine.DefaultTexture});
@@ -490,10 +581,13 @@
 				Engine.Update();
 				// Engine.Render();
 				Engine.UpdateRenderQue();
-				Camera.Components[0].renderFrame();
+				// Engine.CullBakeReflectionProbes(Camera);
+				// Camera.Components[0].renderFrame();
+				Engine.Render();
 				// setTimeout(function(){
 					requestAnimationFrame(FrameLoop);
-				// },50);
+				// },500);
+				// setTimeout(FrameLoop,0);
 			}
 			// setInterval(function(){
 			// 	Engine.Update();
@@ -767,16 +861,20 @@
 					return Ele;
 				}
 				this.getType = function(aset) {
-					if (aset instanceof Engine.Vector3 || (aset instanceof Array && aset.length == 3)) {
-						return "vec3";
-					} else if (aset instanceof Engine.Texture) {
-						return "sampler2D";
-					} else if (aset.constructor === Number) {
-						return "float";
-					} else if (aset instanceof Function) {
-						return "function";
-					} else if (aset.constructor === Boolean) {
-						return "bool";
+					if (aset || aset === 0 || aset === false) {
+						if (aset instanceof Engine.Vector3 || (aset.constructor == Array && aset.length == 3)) {
+							return "vec3";
+						} else if (aset instanceof Engine.Texture) {
+							return "sampler2D";
+						} else if (aset.constructor === Number) {
+							return "float";
+						} else if (aset.constructor == Function) {
+							return "function";
+						} else if (aset.constructor === Boolean) {
+							return "bool";
+						}
+					} else {
+						return;
 					}
 				}
 				this.displayAsset = function(aset) {
@@ -881,10 +979,9 @@
 											// 	Comp[name]();
 											// }));
 										} else {
-											div.appendChild(self.makeDisplayNode(PropNames[j],Type,PropValues[j],function(val,name){
-												Comp[name] = val;
-												console.log(name,val);
-											}));
+											div.appendChild(self.makeDisplayNode(PropNames[j],Type,PropValues[j],function(val,name,idx){
+												idx[name] = val;
+											},Comp));
 										}
 									} else {
 										if (PropValues[j] instanceof Array) {
@@ -900,13 +997,14 @@
 														// },k,true));
 													} else {
 														ArrayContainer.appendChild(self.makeDisplayNode(PropNames[j],Type,PropValues[j][k],function(val,name,idx){
-															Comp[name][idx] = val;
-														},k,true));
+															idx.Comp[name][idx.idx] = val;
+														},{idx:k,Comp:Comp},true));
 													}
 												} else {
 													ArrayContainer.appendChild(self.createAssetFeild(PropNames[j],PropValues[j][k],function(asslol,name,idx){
-														Comp[name][idx] = asslol;
-													},k,true));
+														console.log(name,idx,asslol);
+														idx.Comp[name][idx.idx] = asslol;
+													},{idx:k,Comp:Comp},true));
 												}
 											}
 											for (var k=0; k<ArrayContainer.children.length; k++) {
@@ -914,7 +1012,7 @@
 											}
 											div.appendChild(ArrayContainer);
 										} else {
-											if (PropNames[j] !== "Parrent") {
+											if (PropNames[j] !== "Parrent" && PropValues[j]) {
 												if (!self.AssetConstructors.includes(PropValues[j].constructor)) {
 													console.log(PropValues[j]);
 													var kz = Object.keys(PropValues[j]);
@@ -931,13 +1029,13 @@
 																// },k,true));
 															} else {
 																ArrayContainer.appendChild(self.makeDisplayNode(key,Type,PropValues[j][key],function(val,name,idx){
-																	Comp[idx][name] = val;
-																},PropNames[j],true));
+																	idx.Comp[idx.idx][name] = val;
+																},{idx:PropNames[j],Comp:Comp},true));
 															}
 														} else {
 															ArrayContainer.appendChild(self.createAssetFeild(key,PropValues[j][key],function(asslol,name,idx){
-																Comp[idx][name] = asslol;
-															},PropNames[j],true));
+																idx.Comp[idx.idx][name] = asslol;
+															},{idx:PropNames[j],Comp:Comp},true));
 														}
 													}
 													for (var k=0; k<ArrayContainer.children.length; k++) {
@@ -945,9 +1043,9 @@
 													}
 													div.appendChild(ArrayContainer);
 												} else {
-													div.appendChild(self.createAssetFeild(PropNames[j],PropValues[j],function(asslol,name){
-														Comp[name] = asslol;
-													}));
+													div.appendChild(self.createAssetFeild(PropNames[j],PropValues[j],function(asslol,name,idx){
+														idx[name] = asslol;
+													},Comp));
 												}
 											}
 										}
